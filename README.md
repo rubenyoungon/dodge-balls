@@ -49,7 +49,7 @@ Every few seconds something happens to one or more balls:
 
 ### Power-ups
 
-Power-ups appear now and then and disappear after 8 seconds. Touch one to grab it.
+Power-ups appear now and then and disappear after 8 seconds. Touch one to grab it. Watch out for the cursed ones with a spinning dashed ring: about 1 in 5 power-ups is cursed. The two curses cancel each other, so the last one you grabbed wins.
 
 | Power-up | Effect |
 |---|---|
@@ -57,9 +57,11 @@ Power-ups appear now and then and disappear after 8 seconds. Touch one to grab i
 | Arrows in (yellow) | Tiny: you shrink for 6 s. |
 | Shield (white) | Invulnerable for 3 s. |
 | Arrows out (pink, spinning dashed ring) | Cursed: you get bigger for 5 s. |
+| Snail (purple, spinning dashed ring) | Cursed: you move at half speed for 3.4 s. |
 | Steering wheel (green) | Autopilot: the red ball dodges by itself for 5 s. You can still be hit. |
 | Bomb (orange, sparks) | Rare (about 1 in 17 power-ups). Destroys a random ball. |
 | Snowflake (ice blue) | Freeze: the ball nearest to you stops in place for 4 s, and other balls bounce off it. It's still deadly to touch. |
+
 ## Files
 
 - `index.html`: the page and canvas.

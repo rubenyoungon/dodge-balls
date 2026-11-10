@@ -81,7 +81,8 @@
         b.vy *= speed / s;
     }
 
-    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5, Destroy: 6 }; // Bloat is cursed: it makes you bigger
+    // Bloat and Sluggish are cursed: they make you bigger or slower
+    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5, Destroy: 6, Sluggish: 7 };
 
     const DIFFICULTIES = [
         { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, color: rgb(60, 170, 100) },
@@ -202,7 +203,7 @@
         powerUps.length = 0;
         pops.length = 0;
         survived = 0;
-        bannerTime = 0;
+        banners.length = 0;
         gameOver = false;
         waitingToStart = true;
         mouse = clampPlayer(cursor);
@@ -261,7 +262,7 @@
             if (draggingSlider >= 0) setVolumeFromX(p.x);
             // Move the ball by the finger's movement, not to the finger, so it stays visible.
             if (playing() && !paused && autoTime <= 0)
-                mouse = clampPlayer({ x: mouse.x + dx * TOUCH_SPEED, y: mouse.y + dy * TOUCH_SPEED });
+                mouse = clampPlayer({ x: mouse.x + dx * TOUCH_SPEED * moveScale(), y: mouse.y + dy * TOUCH_SPEED * moveScale() });
             return;
         }
         if (e.pointerType !== 'mouse') return;
@@ -269,7 +270,7 @@
             if (!playing() || paused || autoTime > 0) return; // the autopilot is steering
             // Some browsers occasionally report a huge jump; ignore those.
             if (Math.abs(e.movementX) > 500 || Math.abs(e.movementY) > 500) return;
-            const k = W / canvas.getBoundingClientRect().width; // screen pixels -> game units
+            const k = W / canvas.getBoundingClientRect().width * moveScale(); // screen pixels -> game units
             mouse = clampPlayer({ x: mouse.x + e.movementX * k, y: mouse.y + e.movementY * k });
             return;
         }
@@ -364,11 +365,11 @@
         for (let i = 0; i < currentDifficulty().startBalls; i++) spawnBall();
         spawnTimer = 0;
         eventTimer = 5; // short grace period before the first event
-        bannerTime = 0;
+        banners.length = 0;
         pops.length = 0;
         powerUps.length = 0;
         powerUpTimer = 8;
-        slowTime = shrinkTime = shieldTime = bloatTime = autoTime = 0;
+        slowTime = shrinkTime = shieldTime = bloatTime = autoTime = sluggishTime = 0;
         autoVel = { x: 0, y: 0 };
         playerR = PLAYER_RADIUS;
         mouse = clampPlayer(mouse);
@@ -420,7 +421,7 @@
             survived += dt;
             eventTimer -= dt;
             if (eventTimer <= 0) triggerRandomEvent();
-            bannerTime = Math.max(0, bannerTime - dt);
+            updateBanners(dt);
             spawnTimer += dt;
             if (spawnTimer >= currentDifficulty().newBallEvery) {
                 spawnTimer = 0;
@@ -465,7 +466,7 @@
             b.vy = -150 - rand() * 350;
         }
         powerUps.length = 0;
-        slowTime = shieldTime = autoTime = 0;
+        slowTime = shieldTime = autoTime = sluggishTime = 0;
         playerFall = { x: mouse.x, y: mouse.y, vx: 0, vy: -450 };
     }
 
@@ -562,7 +563,14 @@
     const AUTO_DURATION = 5;
     const FREEZE_DURATION = 4;
     const DESTROY_CHANCE = 0.06; // the bomb is rare: about 1 in 17 power-ups
-    let slowTime = 0, shrinkTime = 0, shieldTime = 0, bloatTime = 0, autoTime = 0;
+    const SLUGGISH_DURATION = 3.4, SLUGGISH_FACTOR = 0.5; // your moves only go half as far
+    // The curses together are a bit rarer than one good power-up each, so grabbing stays worth it.
+    const CURSE_CHANCE = 0.2;
+    const GOOD_KINDS = [PowerUpKind.Slow, PowerUpKind.Shrink, PowerUpKind.Shield, PowerUpKind.Auto, PowerUpKind.Freeze];
+    const CURSED_KINDS = [PowerUpKind.Bloat, PowerUpKind.Sluggish];
+    const isCursed = kind => CURSED_KINDS.includes(kind);
+    let slowTime = 0, shrinkTime = 0, shieldTime = 0, bloatTime = 0, autoTime = 0, sluggishTime = 0;
+    const moveScale = () => sluggishTime > 0 ? SLUGGISH_FACTOR : 1;
     let playerR = PLAYER_RADIUS;
 
     // Eases back to full speed over the last half second of the slow-down.
@@ -576,6 +584,7 @@
             case PowerUpKind.Auto: return rgb(160, 255, 90);
             case PowerUpKind.Freeze: return rgb(170, 200, 255);
             case PowerUpKind.Destroy: return rgb(255, 150, 40);
+            case PowerUpKind.Sluggish: return rgb(160, 100, 235);
             default: return rgb(255, 255, 255);
         }
     }
@@ -586,7 +595,10 @@
         shieldTime = Math.max(0, shieldTime - dt);
         bloatTime = Math.max(0, bloatTime - dt);
         autoTime = Math.max(0, autoTime - dt);
-        for (const b of balls) b.frozenTime = Math.max(0, b.frozenTime - dt);        // Player radius slides smoothly between normal, shrunk and bloated
+        sluggishTime = Math.max(0, sluggishTime - dt);
+        for (const b of balls) b.frozenTime = Math.max(0, b.frozenTime - dt);
+
+        // Player radius slides smoothly between normal, shrunk and bloated
         const targetR = shrinkTime > 0 ? SHRUNK_RADIUS : bloatTime > 0 ? BLOAT_RADIUS : PLAYER_RADIUS;
         playerR += (targetR - playerR) * Math.min(1, dt * 10);
 
@@ -615,7 +627,8 @@
             const y = margin + rand() * (H - 2 * margin);
             if (dist(x, y, mouse.x, mouse.y) < 180) continue; // make the player go for it
             if (powerUps.some(p => dist(x, y, p.x, p.y) < 100)) continue;
-            const kind = rand() < DESTROY_CHANCE ? PowerUpKind.Destroy : randInt(0, 6);
+            const kind = rand() < DESTROY_CHANCE ? PowerUpKind.Destroy
+                : rand() < CURSE_CHANCE ? pickRandom(CURSED_KINDS) : pickRandom(GOOD_KINDS);
             powerUps.push({ x, y, kind, life: POWERUP_LIFE, age: 0 });
             return;
         }
@@ -626,7 +639,9 @@
             case PowerUpKind.Slow: slowTime = SLOW_DURATION; showBanner('SLOW-MO!', powerUpColor(kind)); break;
             // Tiny and Bloat cancel each other: whichever you grabbed last wins.
             case PowerUpKind.Shrink: shrinkTime = SHRINK_DURATION; bloatTime = 0; showBanner('TINY!', powerUpColor(kind)); break;
-            case PowerUpKind.Bloat: bloatTime = BLOAT_DURATION; shrinkTime = 0; showBanner('CURSED! BLOATED!', powerUpColor(kind)); break;
+            // The two curses don't stack either (big and slow at once is nearly certain death).
+            case PowerUpKind.Bloat: bloatTime = BLOAT_DURATION; shrinkTime = sluggishTime = 0; showBanner('CURSED! BLOATED!', powerUpColor(kind)); break;
+            case PowerUpKind.Sluggish: sluggishTime = SLUGGISH_DURATION; bloatTime = 0; showBanner('CURSED! SLUGGISH!', powerUpColor(kind)); break;
             case PowerUpKind.Shield: shieldTime = SHIELD_DURATION; showBanner('INVULNERABLE!', powerUpColor(kind)); break;
             case PowerUpKind.Auto:
                 if (autoTime <= 0) autoVel = { x: 0, y: 0 };
@@ -883,14 +898,14 @@
     const RESIZE_MIN_RADIUS = 8, RESIZE_MAX_RADIUS = JOIN_MAX_RADIUS;
 
     let eventTimer = 0;
-    let bannerText = '';
-    let bannerColor = WHITE;
-    let bannerTime = 0;
-    const BANNER_DURATION = 2;
+    // Banners stack: the newest sits on top and older ones slide down beneath it until they fade.
+    const banners = []; // { text, color, time, y }
+    const BANNER_DURATION = 2, MAX_BANNERS = 4, BANNER_TOP = 70, BANNER_GAP = 42;
 
     function triggerRandomEvent() {
         const d = currentDifficulty();
-        eventTimer = d.eventEvery * (0.7 + rand() * 0.6);        const count = randInt(1, d.maxEventBalls + 1);
+        eventTimer = d.eventEvery * (0.7 + rand() * 0.6);
+        const count = randInt(1, d.maxEventBalls + 1);
         const kind = randInt(0, 6);
 
         // Rare: two balls join into one, or one ball splits in two
@@ -1025,9 +1040,18 @@
     }
 
     function showBanner(text, color) {
-        bannerText = text;
-        bannerColor = color;
-        bannerTime = BANNER_DURATION;
+        // The same text again just moves back to the top instead of showing twice
+        const i = banners.findIndex(b => b.text === text);
+        if (i >= 0) banners.splice(i, 1);
+        banners.unshift({ text, color, time: BANNER_DURATION, y: BANNER_TOP });
+        if (banners.length > MAX_BANNERS) banners.pop();
+    }
+
+    function updateBanners(dt) {
+        for (const b of banners) b.time -= dt;
+        for (let i = banners.length - 1; i >= 0; i--) if (banners[i].time <= 0) banners.splice(i, 1);
+        // Each one eases to its slot
+        banners.forEach((b, i) => { b.y += (BANNER_TOP + i * BANNER_GAP - b.y) * Math.min(1, dt * 12); });
     }
 
     const rushDashSpeed = b => Math.max(b.cruiseSpeed * 2, 450 * currentDifficulty().speed);
@@ -1257,8 +1281,8 @@
 
             fillCircle(p.x, y, POWERUP_RADIUS + 8 + pulse * 6, css(c, 30 + 30 * pulse));
             fillCircle(p.x, y, POWERUP_RADIUS, css(rgb(20, 24, 40), 200));
-            // The cursed one has a jagged, rotating dashed ring
-            if (p.kind === PowerUpKind.Bloat) strokeCircle(p.x, y, POWERUP_RADIUS, css(c), 2.5, 'dash', -p.age * 6);
+            // Cursed ones have a jagged, rotating dashed ring
+            if (isCursed(p.kind)) strokeCircle(p.x, y, POWERUP_RADIUS, css(c), 2.5, 'dash', -p.age * 6);
             else strokeCircle(p.x, y, POWERUP_RADIUS, css(c), 2.5);
             // The rare bomb has sparks circling it so it stands out
             if (p.kind === PowerUpKind.Destroy)
@@ -1315,6 +1339,14 @@
             case PowerUpKind.Shield: // shield shape
                 poly([[x, y - 9], [x + 8, y - 6], [x + 7, y + 2], [x, y + 10], [x - 7, y + 2], [x - 8, y - 6]]);
                 break;
+            case PowerUpKind.Sluggish: // snail
+                strokeCircle(x + 1, y - 1, 6, fill, 2); // shell
+                strokeCircle(x + 1, y - 1, 2.5, fill, 1.5);
+                line(x - 9, y + 6, x + 9, y + 6, fill, 2.5); // body
+                line(x - 8, y + 6, x - 9, y - 1, fill, 2); // head and feelers
+                line(x - 9, y - 1, x - 11, y - 5, fill, 1.5);
+                line(x - 9, y - 1, x - 7, y - 5, fill, 1.5);
+                break;
             case PowerUpKind.Destroy: // bomb with a lit fuse
                 fillCircle(x - 1, y + 2, 7, fill);
                 ctx.fillStyle = fill;
@@ -1349,6 +1381,13 @@
             }
         }
 
+        // Sluggish: a thick, slowly turning purple goo ring; flickers in the last second
+        if (sluggishTime > 0 && (sluggishTime > 1 || Math.floor(sluggishTime * 12) % 2 === 0)) {
+            const c = powerUpColor(PowerUpKind.Sluggish);
+            fillCircle(player.x, player.y, playerR + 6, css(c, 60));
+            strokeCircle(player.x, player.y, playerR + 6, css(c, 230), 3, 'dash', survived * 2);
+        }
+
         if (shieldTime <= 0) return;
         // Bubble around the player; flickers in the last second as a warning
         const visible = shieldTime > 1 || Math.floor(shieldTime * 12) % 2 === 0;
@@ -1376,6 +1415,7 @@
         bar('Tiny', shrinkTime, SHRINK_DURATION, PowerUpKind.Shrink);
         bar('Shield', shieldTime, SHIELD_DURATION, PowerUpKind.Shield);
         bar('Cursed: big', bloatTime, BLOAT_DURATION, PowerUpKind.Bloat);
+        bar('Cursed: slow', sluggishTime, SLUGGISH_DURATION, PowerUpKind.Sluggish);
         bar('Autopilot', autoTime, AUTO_DURATION, PowerUpKind.Auto);
     }
 
@@ -1518,14 +1558,18 @@
         strokeCircle(b.x, b.y, b.r + 4, css(NEW_BALL_LIGHT, 230 * fade), 2.5);
     }
 
-    function drawBanner() {
-        if (bannerTime <= 0 || gameOver || waitingToStart) return;
-        const t = bannerTime / BANNER_DURATION;
-        const alpha = 255 * Math.min(1, t * 2);
-        const pop = t > 0.85 ? (t - 0.85) / 0.15 : 0; // brief scale-up when it appears
-        const pt = 26 + 6 * pop;
-        drawText(bannerText, W / 2 + 2, 72, pt, true, css(rgb(0, 0, 0), alpha / 2), 'center', 'middle');
-        drawText(bannerText, W / 2, 70, pt, true, css(bannerColor, alpha), 'center', 'middle');
+    function drawBanners() {
+        if (gameOver || waitingToStart) return;
+        // Oldest first, so the newest is drawn on top while they slide past each other
+        for (let i = banners.length - 1; i >= 0; i--) {
+            const b = banners[i];
+            const t = b.time / BANNER_DURATION;
+            const alpha = 255 * Math.min(1, t * 2);
+            const pop = t > 0.85 ? (t - 0.85) / 0.15 : 0; // brief scale-up when it appears
+            const pt = 26 + 6 * pop;
+            drawText(b.text, W / 2 + 2, b.y + 2, pt, true, css(rgb(0, 0, 0), alpha / 2), 'center', 'middle');
+            drawText(b.text, W / 2, b.y, pt, true, css(b.color, alpha), 'center', 'middle');
+        }
     }
 
     function drawCenterText(title, sub) {
@@ -1720,7 +1764,7 @@
         const hud = `Time: ${survived.toFixed(1)}s   Balls: ${balls.length}   Best (${d.name}): ${best[difficultyIndex].toFixed(1)}s`;
         drawText(hud, 12, 10, 14, true, 'white');
 
-        drawBanner();
+        drawBanners();
 
         const startHint = touchMode ? 'Tap to start' : 'Click or press Space to start';
         if (waitingToStart)
