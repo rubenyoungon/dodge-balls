@@ -413,7 +413,9 @@
             updateTrails();
             updatePowerUps(dt);
             updatePops(dt);
-            for (const b of balls) b.newTime = Math.max(0, b.newTime - dt);            updateIdle(dt);
+            for (const b of balls) b.newTime = Math.max(0, b.newTime - dt);
+
+            updateIdle(dt);
 
             survived += dt;
             eventTimer -= dt;
@@ -423,7 +425,10 @@
             if (spawnTimer >= currentDifficulty().newBallEvery) {
                 spawnTimer = 0;
                 const b = spawnBall();
-                if (b) b.newTime = NEW_BALL_HIGHLIGHT; // starting balls don't get this, only ones added mid-run
+                if (b) { // starting balls don't get this, only ones added mid-run
+                    b.newTime = NEW_BALL_HIGHLIGHT;
+                    showBanner('NEW BALL!', NEW_BALL_GLOW);
+                }
             }
 
             const hit = shieldTime <= 0 && balls.some(b => dist(b.x, b.y, mouse.x, mouse.y) < b.r + playerR);
@@ -1511,11 +1516,6 @@
             strokeCircle(b.x, b.y, b.r + 5 + 22 * t, css(NEW_BALL_GLOW, 230 * (1 - t) * fade), 2 * (1 - t) + 1);
         }
         strokeCircle(b.x, b.y, b.r + 4, css(NEW_BALL_LIGHT, 230 * fade), 2.5);
-
-        // "NEW BALL!" label riding above the ball (below it when the ball is at the top edge)
-        const above = b.y - b.r - 22 > 40;
-        drawText('NEW BALL!', clamp(b.x, 40, W - 40), above ? b.y - b.r - 10 : b.y + b.r + 10, 13, true,
-            css(NEW_BALL_GLOW, 255 * fade), 'center', above ? 'bottom' : 'top');
     }
 
     function drawBanner() {

@@ -18,7 +18,7 @@ Then go to <http://localhost:8123>.
 
 - Click (or press Space, Enter or R) to start. The mouse is captured while you play, and moving it moves the red ball.
 - Touching a blue ball ends the run. Your best time is saved for each difficulty.
-- A new ball joins every so often. For 2 seconds it flashes white, sends out small golden rings and is labeled **NEW BALL!**, so you can see where it appeared.
+- A new ball joins every so often. A **NEW BALL!** banner announces it, and for 2 seconds the ball flashes white and sends out small golden rings so you can see where it appeared.
 - **Don't camp.** If you stand still for 3 seconds, the two nearest balls rush at you. A closing orange ring and a **MOVE IT!** banner warn you first, then **INCOMING!** shows when the balls come at you.
 - Press **Esc** to pause. The pause menu has music and sound-effect volume sliders (drag them, or pick one with ↑/↓ and adjust with ←/→) and lets you quit to the menu.
 
