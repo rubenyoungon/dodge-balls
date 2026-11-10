@@ -57,6 +57,7 @@ Power-ups appear now and then and disappear after 8 seconds. Touch one to grab i
 | Shield (white) | Invulnerable for 3 s. |
 | Arrows out (pink, spinning dashed ring) | Cursed: you get bigger for 5 s. |
 | Steering wheel (green) | Autopilot: the red ball dodges by itself for 5 s. You can still be hit. |
+| Snowflake (ice blue) | Freeze: the ball nearest to you stops in place for 4 s, and other balls bounce off it. It's still deadly to touch. |
 ## Files
 
 - `index.html`: the page and canvas.

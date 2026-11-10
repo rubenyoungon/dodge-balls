@@ -66,6 +66,7 @@
             baseR: 0, bigR: 0, // normal and peak radius during a giant event
             targetR: 0,      // new permanent radius during a resize event
             partner: null,   // the ball this one is joining with
+            frozenTime: 0,   // seconds left frozen in place (freeze power-up); its event is paused meanwhile
             trail: [],
             trailColor: WHITE,
         }, props);
@@ -79,7 +80,7 @@
         b.vy *= speed / s;
     }
 
-    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4 }; // Bloat is cursed: it makes you bigger
+    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5 }; // Bloat is cursed: it makes you bigger
 
     const DIFFICULTIES = [
         { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, color: rgb(60, 170, 100) },
@@ -449,6 +450,7 @@
             if (b.mode === Mode.Resizing) b.r = b.targetR;
             b.mode = Mode.Normal;
             b.partner = null;
+            b.frozenTime = 0;
             b.trail.length = 0;
             b.vx *= 0.3;
             b.vy = -150 - rand() * 350;
@@ -471,6 +473,7 @@
 
     function step(dt) {
         for (const b of balls) {
+            if (b.frozenTime > 0) continue; // stays put; keeps its velocity for when it thaws
             updateBehavior(b, dt);
             b.x += b.vx * dt;
             b.y += b.vy * dt;
@@ -496,6 +499,21 @@
 
                 const d = Math.sqrt(distSq);
                 const nx = dx / d, ny = dy / d;
+
+                // A frozen ball is a fixed obstacle: the other ball bounces off it like a wall.
+                if (a.frozenTime > 0 || c.frozenTime > 0) {
+                    if (a.frozenTime > 0 && c.frozenTime > 0) continue;
+                    const [m, ux, uy] = a.frozenTime > 0 ? [c, nx, ny] : [a, -nx, -ny]; // u points from ice to mover
+                    m.x += ux * (minDist - d);
+                    m.y += uy * (minDist - d);
+                    const vn = m.vx * ux + m.vy * uy;
+                    if (vn < 0) {
+                        sound.play(-vn, (a.r + c.r) / 2);
+                        m.vx -= 2 * vn * ux;
+                        m.vy -= 2 * vn * uy;
+                    }
+                    continue;
+                }
 
                 // Push apart so they don't overlap
                 const overlap = minDist - d;
@@ -533,6 +551,7 @@
     const powerUps = [];
     let powerUpTimer = 0;
     const AUTO_DURATION = 5;
+    const FREEZE_DURATION = 4;
     let slowTime = 0, shrinkTime = 0, shieldTime = 0, bloatTime = 0, autoTime = 0;
     let playerR = PLAYER_RADIUS;
 
@@ -545,6 +564,7 @@
             case PowerUpKind.Shrink: return rgb(255, 220, 70);
             case PowerUpKind.Bloat: return rgb(220, 60, 140);
             case PowerUpKind.Auto: return rgb(160, 255, 90);
+            case PowerUpKind.Freeze: return rgb(170, 200, 255);
             default: return rgb(255, 255, 255);
         }
     }
@@ -555,7 +575,7 @@
         shieldTime = Math.max(0, shieldTime - dt);
         bloatTime = Math.max(0, bloatTime - dt);
         autoTime = Math.max(0, autoTime - dt);
-
+        for (const b of balls) b.frozenTime = Math.max(0, b.frozenTime - dt);
         // Player radius slides smoothly between normal, shrunk and bloated
         const targetR = shrinkTime > 0 ? SHRUNK_RADIUS : bloatTime > 0 ? BLOAT_RADIUS : PLAYER_RADIUS;
         playerR += (targetR - playerR) * Math.min(1, dt * 10);
@@ -585,7 +605,7 @@
             const y = margin + rand() * (H - 2 * margin);
             if (dist(x, y, mouse.x, mouse.y) < 180) continue; // make the player go for it
             if (powerUps.some(p => dist(x, y, p.x, p.y) < 100)) continue;
-            const kind = randInt(0, 5);
+            const kind = randInt(0, 6);
             powerUps.push({ x, y, kind, life: POWERUP_LIFE, age: 0 });
             return;
         }
@@ -603,6 +623,19 @@
                 autoTime = AUTO_DURATION;
                 showBanner('AUTOPILOT!', powerUpColor(kind));
                 break;
+            case PowerUpKind.Freeze: {
+                // The nearest ball that isn't already frozen
+                let target = null;
+                for (const b of balls)
+                    if (b.frozenTime <= 0 && (!target || dist(b.x, b.y, mouse.x, mouse.y) < dist(target.x, target.y, mouse.x, mouse.y)))
+                        target = b;
+                if (target) {
+                    target.frozenTime = FREEZE_DURATION;
+                    addPop(target.x, target.y, target.r, powerUpColor(kind));
+                }
+                showBanner('FROZEN!', powerUpColor(kind));
+                break;
+            }
         }
     }
 
@@ -620,6 +653,7 @@
     // Where (and how big) ball b will be after `t` seconds of ball time. `playerAt(t)` gives the
     // player's position at a ball time, used to aim balls that are about to rush.
     function predictBall(b, t, playerAt) {
+        if (b.frozenTime > 0) return { x: b.x, y: b.y, r: b.r }; // a frozen ball stays put (close enough over the horizon)
         let x = b.x + b.vx * t, y = b.y + b.vy * t, r = b.r;
         if (b.mode === Mode.RushWarning && t > b.modeTime) {
             // It launches at wherever the player is when its wind-up ends
@@ -799,6 +833,7 @@
     const RUSH_LIGHT = rgb(255, 160, 50), RUSH_DARK = rgb(170, 60, 0);
     const CURVE_LIGHT = rgb(200, 120, 255), CURVE_DARK = rgb(90, 30, 170);
     const NORMAL_LIGHT = rgb(70, 140, 255), NORMAL_DARK = rgb(20, 50, 160);
+    const FROZEN_LIGHT = rgb(235, 248, 255), FROZEN_DARK = rgb(120, 170, 220);
     const GIANT_LIGHT = rgb(110, 235, 160), GIANT_DARK = rgb(20, 120, 70);
     const HOMING_LIGHT = rgb(240, 70, 110), HOMING_DARK = rgb(110, 10, 40);
 
@@ -940,7 +975,7 @@
         if (idleTime < IDLE_LIMIT) return;
 
         const picks = balls
-            .filter(b => b.mode === Mode.Normal && dist(b.x, b.y, mouse.x, mouse.y) > IDLE_RUSH_MIN_DIST)
+            .filter(b => b.mode === Mode.Normal && b.frozenTime <= 0 && dist(b.x, b.y, mouse.x, mouse.y) > IDLE_RUSH_MIN_DIST)
             .sort((a, b) => dist(a.x, a.y, mouse.x, mouse.y) - dist(b.x, b.y, mouse.x, mouse.y))
             .slice(0, 2);
         if (picks.length === 0) return; // nothing free right now; try again next frame
@@ -1096,7 +1131,8 @@
     // Special balls leave a short fading trail; it shrinks away once they're back to normal.
     function updateTrails() {
         for (const b of balls) {
-            if (b.mode === Mode.Rushing || b.mode === Mode.Curving || b.mode === Mode.Homing || b.mode === Mode.Boosted) {
+            const special = b.mode === Mode.Rushing || b.mode === Mode.Curving || b.mode === Mode.Homing || b.mode === Mode.Boosted;
+            if (special && b.frozenTime <= 0) {
                 b.trail.push({ x: b.x, y: b.y });
                 if (b.trail.length > 14) b.trail.shift();
             } else if (b.trail.length > 0) {
@@ -1243,6 +1279,20 @@
             case PowerUpKind.Shield: // shield shape
                 poly([[x, y - 9], [x + 8, y - 6], [x + 7, y + 2], [x, y + 10], [x - 7, y + 2], [x - 8, y - 6]]);
                 break;
+            case PowerUpKind.Freeze: // snowflake
+                for (let k = 0; k < 3; k++) {
+                    const a = Math.PI / 2 + k * TAU / 6;
+                    const cx = Math.cos(a) * 9, cy = Math.sin(a) * 9;
+                    line(x - cx, y - cy, x + cx, y + cy, fill, 2);
+                    for (const sgn of [-1, 1]) { // little V at each tip
+                        const tx = x + sgn * cx * 0.65, ty = y + sgn * cy * 0.65;
+                        for (const side of [-1, 1]) {
+                            const b2 = a + (sgn < 0 ? Math.PI : 0) + side * 2.4;
+                            line(tx, ty, tx + Math.cos(b2) * 4, ty + Math.sin(b2) * 4, fill, 1.5);
+                        }
+                    }
+                }
+                break;
         }
     }
 
@@ -1299,6 +1349,17 @@
             const t = (i + 1) / (n + 1);
             fillCircle(p.x, p.y, b.r * (0.35 + 0.5 * t), css(b.trailColor, 90 * t));
         });
+
+        // Frozen: an icy ball with a frost ring; flickers back to its own look in the last second
+        if (b.frozenTime > 0 && (b.frozenTime > 1 || Math.floor(b.frozenTime * 10) % 2 === 0)) {
+            drawBall(b.x, b.y, b.r, FROZEN_LIGHT, FROZEN_DARK);
+            strokeCircle(b.x, b.y, b.r + 3, css(FROZEN_LIGHT, 200), 2, 'dash');
+            for (let k = 0; k < 3; k++) { // a little six-spoke frost mark
+                const a = k * TAU / 6, s = b.r * 0.45;
+                line(b.x - Math.cos(a) * s, b.y - Math.sin(a) * s, b.x + Math.cos(a) * s, b.y + Math.sin(a) * s, css(WHITE, 170), 1.5);
+            }
+            return;
+        }
 
         switch (b.mode) {
             case Mode.RushWarning: {
