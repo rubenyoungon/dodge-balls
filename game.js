@@ -1,8 +1,10 @@
 'use strict';
 
 // The game runs in a fixed 1000x700 coordinate space; the canvas
-// is scaled to fit the window. While playing, the mouse is captured with the Pointer
-// Lock API and the red ball moves by the mouse's movement.
+// is scaled to fit the window. While playing with a mouse, it is captured with the Pointer
+// Lock API and the red ball moves by the mouse's movement. On a touch screen there is no
+// lock: the red ball moves by how far the finger drags, like a trackpad, so the finger
+// never has to cover it.
 
 (() => {
     const W = 1000, H = 700;
@@ -113,6 +115,13 @@
     let lockMessage = '';
     let lockMessageTime = 0;
 
+    // Touch play: no pointer lock, the ball follows the drag of one finger.
+    // Starts out guessed from the device, then follows whatever was used last.
+    let touchMode = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches)
+        || typeof canvas.requestPointerLock !== 'function';
+    let dragId = null;     // the pointer currently steering the ball
+    let dragLast = null;   // its last position, in game units
+
     sound.musicVolume = clamp(Number(store.get('volume', 1)), 0, 1);
 
     function requestLock() {
@@ -153,6 +162,7 @@
     });
 
     function requestStart() {
+        if (touchMode) { startGame(); return; }
         pendingStart = true;
         requestLock();
     }
@@ -166,7 +176,7 @@
     }
 
     function resume() {
-        if (playing()) {
+        if (playing() && !touchMode) {
             // The red ball stays where it was; capturing the mouse again resumes the game.
             pendingResume = true;
             requestLock();
@@ -197,11 +207,20 @@
 
     const clampPlayer = p => ({ x: clamp(p.x, playerR, W - playerR), y: clamp(p.y, playerR, H - playerR) });
 
-    canvas.addEventListener('mousedown', e => {
-        if (e.button !== 0) return;
+    // Pointer Events cover the mouse, touch and pens with one set of handlers.
+    canvas.addEventListener('pointerdown', e => {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (!e.isPrimary && dragId !== null) return; // a second finger doesn't take over
+        e.preventDefault();
+        touchMode = e.pointerType !== 'mouse' || typeof canvas.requestPointerLock !== 'function';
         sound.unlock();
         const p = toGame(e);
         cursor = p;
+        if (touchMode) {
+            try { canvas.setPointerCapture(e.pointerId); } catch { /* not supported */ }
+            dragId = e.pointerId;
+            dragLast = p;
+        }
         if (paused) {
             if (contains(inflate(sliderRect(), 10, 14), p)) { draggingVolume = true; setVolumeFromX(p.x); }
             else if (contains(resumeButton(), p)) resume();
@@ -212,15 +231,31 @@
             // Clicking a difficulty starts with it; clicking anywhere else uses the selected one.
             for (let i = 0; i < DIFFICULTIES.length; i++)
                 if (contains(difficultyButton(i), p)) setDifficulty(i);
-            mouse = clampPlayer(p);
+            // Don't start the ball hidden under the touch pause button.
+            mouse = clampPlayer(touchMode && contains(inflate(pauseButton(), 40, 40), p) ? { x: W / 2, y: H / 2 } : p);
             requestStart();
+        } else if (touchMode) {
+            if (contains(inflate(pauseButton(), 8, 8), p)) { dragId = null; pause(); }
+            // Otherwise this finger now steers the ball (see pointermove).
         } else if (!locked) {
             // Playing without the lock shouldn't happen, but a click recaptures the mouse.
             requestLock();
         }
     });
 
-    window.addEventListener('mousemove', e => {
+    window.addEventListener('pointermove', e => {
+        if (dragId !== null && e.pointerId === dragId) {
+            const p = toGame(e);
+            const dx = p.x - dragLast.x, dy = p.y - dragLast.y;
+            dragLast = p;
+            cursor = p;
+            if (draggingVolume) setVolumeFromX(p.x);
+            // Move the ball by the finger's movement, not to the finger, so it stays visible.
+            if (playing() && !paused && autoTime <= 0)
+                mouse = clampPlayer({ x: mouse.x + dx * TOUCH_SPEED, y: mouse.y + dy * TOUCH_SPEED });
+            return;
+        }
+        if (e.pointerType !== 'mouse') return;
         if (locked) {
             if (!playing() || paused || autoTime > 0) return; // the autopilot is steering
             // Some browsers occasionally report a huge jump; ignore those.
@@ -234,10 +269,19 @@
         if (!playing()) mouse = clampPlayer(cursor);
     });
 
-    window.addEventListener('mouseup', () => {
+    function pointerEnd(e) {
+        if (e.pointerType !== 'mouse') {
+            if (e.pointerId !== dragId) return;
+            dragId = null;
+            cursor = { x: -1, y: -1 }; // no hover effects left behind by a finger
+            sound.unlock(); // iOS only allows starting audio on the end of a touch
+        }
         if (draggingVolume) store.set('volume', sound.musicVolume);
         draggingVolume = false;
-    });
+    }
+    window.addEventListener('pointerup', pointerEnd);
+    window.addEventListener('pointercancel', pointerEnd);
+    canvas.addEventListener('contextmenu', e => e.preventDefault()); // long press
 
     window.addEventListener('keydown', e => {
         if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
@@ -279,6 +323,9 @@
     const sliderRect = () => { const m = menuRect(); return rect(m.x + 40, m.y + 120, MENU_W - 80, 8); };
     const resumeButton = () => { const m = menuRect(); return rect(m.x + 40, m.y + m.h - 70, 140, 44); };
     const quitButton = () => { const m = menuRect(); return rect(m.x + m.w - 180, m.y + m.h - 70, 140, 44); };
+
+    const pauseButton = () => rect(W - 64, 8, 56, 56); // touch only
+    const TOUCH_SPEED = 1.15; // a little faster than the finger, since phone screens are small
 
     const DIFF_W = 150, DIFF_H = 48, DIFF_GAP = 20;
     function difficultyButton(i) {
@@ -1316,7 +1363,7 @@
     }
 
     function drawDifficultySelector() {
-        drawText('Difficulty  (← / → or 1-3)', W / 2, difficultyButton(0).y - 22, 12, false,
+        drawText(touchMode ? 'Difficulty' : 'Difficulty  (← / → or 1-3)', W / 2, difficultyButton(0).y - 22, 12, false,
             css(LIGHT_GRAY), 'center', 'middle');
 
         for (let i = 0; i < DIFFICULTIES.length; i++) {
@@ -1338,8 +1385,23 @@
             drawText(d.name, r.x + r.w / 2, r.y + r.h / 2, 13, true, selected || hover ? 'white' : css(GRAY), 'center', 'middle');
         }
 
-        drawText('The mouse is captured while you play — press Esc to pause.', W / 2, H - 28, 10, false,
-            css(rgb(200, 210, 230), 140), 'center', 'middle');
+        const hint = !touchMode ? 'The mouse is captured while you play — press Esc to pause.'
+            : window.innerHeight > window.innerWidth ? 'Drag anywhere to move the red ball. Turn your phone sideways for a bigger view.'
+                : 'Drag anywhere to move the red ball — it moves with your finger, not under it.';
+        drawText(hint, W / 2, H - 28, touchMode ? 13 : 10, false, css(rgb(200, 210, 230), touchMode ? 190 : 140), 'center', 'middle');
+    }
+
+    function drawPauseButton() {
+        if (!touchMode || !playing() || paused) return;
+        const r = pauseButton();
+        roundRectPath(r, 12);
+        ctx.fillStyle = css(rgb(28, 32, 50), 150);
+        ctx.fill();
+        setPen(css(WHITE, 90), 1.5);
+        ctx.stroke();
+        ctx.fillStyle = css(WHITE, 210);
+        ctx.fillRect(r.x + 18, r.y + 16, 7, 24);
+        ctx.fillRect(r.x + 31, r.y + 16, 7, 24);
     }
 
     function drawButton(r, text, color) {
@@ -1382,7 +1444,7 @@
         drawButton(resumeButton(), 'Resume', rgb(50, 110, 220));
         drawButton(quitButton(), 'Quit', rgb(200, 60, 60));
 
-        const hint = playing() ? 'Click Resume to recapture the mouse' : 'Esc to close';
+        const hint = touchMode ? '' : playing() ? 'Click Resume to recapture the mouse' : 'Esc to close';
         drawText(hint, m.x + m.w / 2, m.y + m.h + 16, 9, false, css(rgb(200, 210, 230), 140), 'center', 'middle');
     }
 
@@ -1483,10 +1545,13 @@
 
         drawBanner();
 
+        const startHint = touchMode ? 'Tap to start' : 'Click or press Space to start';
         if (waitingToStart)
-            drawCenterText('DODGE BALLS', 'Keep the red ball away from the blue ones.\nClick or press Space to start.');
+            drawCenterText('DODGE BALLS', `Keep the red ball away from the blue ones.\n${startHint}.`);
         else if (gameOver)
-            drawCenterText('YOU LOSE', `You survived ${survived.toFixed(1)} seconds.\nClick or press Space to play again.`);
+            drawCenterText('YOU LOSE', `You survived ${survived.toFixed(1)} seconds.\n${touchMode ? 'Tap' : 'Click or press Space'} to play again.`);
+
+        drawPauseButton();
 
         if ((waitingToStart || gameOver) && !paused) drawDifficultySelector();
         if (paused) drawPauseMenu();
