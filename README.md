@@ -44,7 +44,7 @@ Every few seconds something happens to one or more balls:
 | **Hunted!** | A ball slowly homes in on you for a few seconds. |
 | **Speed up!** | Balls heat up and move much faster for a while. |
 | **Merge!** | Two balls are pulled together into one bigger ball. |
-| **Split!** | A ball cracks and splits into two smaller ones. |
+| **Split!** | A ball cracks and splits into two smaller ones. After 90 seconds, some splits (**Split x3!**) break a ball into three. |
 
 ### Power-ups
 

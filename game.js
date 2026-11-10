@@ -673,6 +673,7 @@
     const RARE_EVENT_CHANCE = 0.5; // share of events that become a join or split instead
     const JOIN_PULL_SPEED = 260, JOIN_TIMEOUT = 3, JOIN_MAX_RADIUS = 48;
     const SPLIT_WARN_TIME = 1, SPLIT_MIN_RADIUS = 18, CHILD_MIN_RADIUS = 12;
+    const TRIPLE_SPLIT_AFTER = 90, TRIPLE_SPLIT_CHANCE = 0.4; // later in a run, some splits make three balls
     const JOIN_LIGHT = rgb(150, 240, 255), JOIN_DARK = rgb(0, 110, 140);
     const SPLIT_LIGHT = rgb(255, 140, 200), SPLIT_DARK = rgb(150, 30, 90);
 
@@ -707,7 +708,8 @@
         b.mode = Mode.SplitWarning;
         b.modeTime = SPLIT_WARN_TIME;
         b.cruiseSpeed = speedOf(b);
-        showBanner('SPLIT!', SPLIT_LIGHT);
+        b.splitParts = survived >= TRIPLE_SPLIT_AFTER && rand() < TRIPLE_SPLIT_CHANCE ? 3 : 2;
+        showBanner(b.splitParts === 3 ? 'SPLIT x3!' : 'SPLIT!', SPLIT_LIGHT);
         return true;
     }
 
@@ -744,21 +746,38 @@
                     }
                 }
             } else if (a.mode === Mode.SplitWarning && a.modeTime <= 0) {
-                // Two halves with the same total area, veering apart from the original heading
-                const childR = Math.max(CHILD_MIN_RADIUS, a.r / Math.SQRT2);
+                // Pieces with the same total area as the original
+                const parts = a.splitParts === 3 ? 3 : 2;
+                const childR = Math.max(CHILD_MIN_RADIUS, a.r / Math.sqrt(parts));
                 const heading = Math.atan2(a.vy, a.vx);
                 const speed = Math.max(a.cruiseSpeed, 120 * currentDifficulty().speed) * 1.1;
-                const px = -Math.sin(heading), py = Math.cos(heading);
                 balls = balls.filter(b => b !== a);
-                for (const side of [-1, 1]) {
-                    const dir = heading + side * 0.6;
-                    balls.push(makeBall({
-                        x: a.x + px * side * (childR + 1),
-                        y: a.y + py * side * (childR + 1),
-                        r: childR,
-                        vx: Math.cos(dir) * speed,
-                        vy: Math.sin(dir) * speed,
-                    }));
+                if (parts === 2) {
+                    // Two halves veering apart from the original heading
+                    const px = -Math.sin(heading), py = Math.cos(heading);
+                    for (const side of [-1, 1]) {
+                        const dir = heading + side * 0.6;
+                        balls.push(makeBall({
+                            x: a.x + px * side * (childR + 1),
+                            y: a.y + py * side * (childR + 1),
+                            r: childR,
+                            vx: Math.cos(dir) * speed,
+                            vy: Math.sin(dir) * speed,
+                        }));
+                    }
+                } else {
+                    // Three pieces bursting outward, evenly spaced around the old heading
+                    const spread = childR * 1.2 + 1; // far enough apart that they don't overlap
+                    for (let k = 0; k < 3; k++) {
+                        const dir = heading + k * TAU / 3;
+                        balls.push(makeBall({
+                            x: a.x + Math.cos(dir) * spread,
+                            y: a.y + Math.sin(dir) * spread,
+                            r: childR,
+                            vx: Math.cos(dir) * speed,
+                            vy: Math.sin(dir) * speed,
+                        }));
+                    }
                 }
                 addPop(a.x, a.y, a.r, SPLIT_LIGHT);
             }
@@ -808,8 +827,7 @@
 
     function triggerRandomEvent() {
         const d = currentDifficulty();
-        eventTimer = d.eventEvery * (0.7 + rand() * 0.6);
-        const count = randInt(1, d.maxEventBalls + 1);
+        eventTimer = d.eventEvery * (0.7 + rand() * 0.6);        const count = randInt(1, d.maxEventBalls + 1);
         const kind = randInt(0, 6);
 
         // Rare: two balls join into one, or one ball splits in two
@@ -1338,10 +1356,18 @@
                 const sy = (rand() - 0.5) * 6 * urgency;
                 const on = Math.floor(b.modeTime * (8 + 16 * urgency)) % 2 === 0;
                 drawBall(b.x + sx, b.y + sy, b.r, on ? SPLIT_LIGHT : NORMAL_LIGHT, on ? SPLIT_DARK : NORMAL_DARK);
-                // A crack across the ball, along the split line
+                // A crack along the split line; a three-way split cracks in a Y between the pieces
                 const a = Math.atan2(b.vy, b.vx);
-                const cx = Math.cos(a) * b.r * 0.8, cy = Math.sin(a) * b.r * 0.8;
-                line(b.x + sx - cx, b.y + sy - cy, b.x + sx + cx, b.y + sy + cy, css(WHITE, 120 + 135 * urgency), 2);
+                const crack = css(WHITE, 120 + 135 * urgency);
+                if (b.splitParts === 3) {
+                    for (let k = 0; k < 3; k++) {
+                        const ca = a + TAU / 6 + k * TAU / 3;
+                        line(b.x + sx, b.y + sy, b.x + sx + Math.cos(ca) * b.r * 0.8, b.y + sy + Math.sin(ca) * b.r * 0.8, crack, 2);
+                    }
+                } else {
+                    const cx = Math.cos(a) * b.r * 0.8, cy = Math.sin(a) * b.r * 0.8;
+                    line(b.x + sx - cx, b.y + sy - cy, b.x + sx + cx, b.y + sy + cy, crack, 2);
+                }
                 break;
             }
             case Mode.Boosted: {
