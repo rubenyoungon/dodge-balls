@@ -407,10 +407,11 @@
             b.x += b.vx * dt;
             b.y += b.vy * dt;
 
-            if (b.x - b.r < 0) { b.x = b.r; b.vx = Math.abs(b.vx); }
-            if (b.x + b.r > W) { b.x = W - b.r; b.vx = -Math.abs(b.vx); }
-            if (b.y - b.r < 0) { b.y = b.r; b.vy = Math.abs(b.vy); }
-            if (b.y + b.r > H) { b.y = H - b.r; b.vy = -Math.abs(b.vy); }
+            // Bounce off the walls; only a ball actually moving into the wall makes a sound.
+            if (b.x - b.r < 0) { b.x = b.r; if (b.vx < 0) sound.play(-b.vx, b.r); b.vx = Math.abs(b.vx); }
+            if (b.x + b.r > W) { b.x = W - b.r; if (b.vx > 0) sound.play(b.vx, b.r); b.vx = -Math.abs(b.vx); }
+            if (b.y - b.r < 0) { b.y = b.r; if (b.vy < 0) sound.play(-b.vy, b.r); b.vy = Math.abs(b.vy); }
+            if (b.y + b.r > H) { b.y = H - b.r; if (b.vy > 0) sound.play(b.vy, b.r); b.vy = -Math.abs(b.vy); }
         }
 
         // Elastic collisions between blue balls
