@@ -40,6 +40,7 @@ Every few seconds something happens to one or more balls:
 | **Incoming!** | Balls wind up, then dash in a straight line at where you are. |
 | **Wobble!** | Balls spiral or snake around. |
 | **Giant!** | A ball swells to several times its size for about 10 seconds. A dashed outline shows the size it will grow to. |
+| **Grow! / Shrink!** | Balls permanently get bigger or smaller. A dashed outline shows their new size first. |
 | **Hunted!** | A ball slowly homes in on you for a few seconds. |
 | **Speed up!** | Balls heat up and move much faster for a while. |
 | **Merge!** | Two balls are pulled together into one bigger ball. |
@@ -55,6 +56,7 @@ Power-ups appear now and then and disappear after 8 seconds. Touch one to grab i
 | Arrows in (yellow) | Tiny: you shrink for 6 s. |
 | Shield (white) | Invulnerable for 3 s. |
 | Arrows out (pink, spinning dashed ring) | Cursed: you get bigger for 5 s. |
+| Steering wheel (green) | Autopilot: the red ball dodges by itself for 5 s. You can still be hit. |
 
 ## Files
 

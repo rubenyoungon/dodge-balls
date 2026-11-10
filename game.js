@@ -50,7 +50,7 @@
 
     const Mode = {
         Normal: 0, RushWarning: 1, Rushing: 2, Curving: 3, GrowWarning: 4,
-        Growing: 5, Homing: 6, Boosted: 7, Joining: 8, SplitWarning: 9,
+        Growing: 5, Homing: 6, Boosted: 7, Joining: 8, SplitWarning: 9, Resizing: 10,
     };
 
     function makeBall(props) {
@@ -62,6 +62,7 @@
             turnRate: 0,     // rad/s, constant part of a curve (spiral)
             wobbleAmp: 0, wobbleFreq: 0, phase: 0, // oscillating part of a curve (snake)
             baseR: 0, bigR: 0, // normal and peak radius during a giant event
+            targetR: 0,      // new permanent radius during a resize event
             partner: null,   // the ball this one is joining with
             trail: [],
             trailColor: WHITE,
@@ -76,7 +77,7 @@
         b.vy *= speed / s;
     }
 
-    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3 }; // Bloat is cursed: it makes you bigger
+    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4 }; // Bloat is cursed: it makes you bigger
 
     const DIFFICULTIES = [
         { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, color: rgb(60, 170, 100) },
@@ -221,7 +222,7 @@
 
     window.addEventListener('mousemove', e => {
         if (locked) {
-            if (!playing() || paused) return;
+            if (!playing() || paused || autoTime > 0) return; // the autopilot is steering
             // Some browsers occasionally report a huge jump; ignore those.
             if (Math.abs(e.movementX) > 500 || Math.abs(e.movementY) > 500) return;
             const k = W / canvas.getBoundingClientRect().width; // screen pixels -> game units
@@ -302,7 +303,8 @@
         pops.length = 0;
         powerUps.length = 0;
         powerUpTimer = 8;
-        slowTime = shrinkTime = shieldTime = bloatTime = 0;
+        slowTime = shrinkTime = shieldTime = bloatTime = autoTime = 0;
+        autoVel = { x: 0, y: 0 };
         playerR = PLAYER_RADIUS;
         mouse = clampPlayer(mouse);
         idleAnchor = { x: mouse.x, y: mouse.y };
@@ -333,6 +335,7 @@
     function update(dt) {
         if (playing()) {
             mouse = clampPlayer(mouse); // the radius can change with power-ups
+            if (autoTime > 0) autoPilot(dt);
 
             // Sub-step for more stable collisions at high speed
             sound.beginFrame();
@@ -379,6 +382,7 @@
     function startFall() {
         for (const b of balls) {
             if (b.mode === Mode.GrowWarning || b.mode === Mode.Growing) b.r = b.baseR;
+            if (b.mode === Mode.Resizing) b.r = b.targetR;
             b.mode = Mode.Normal;
             b.partner = null;
             b.trail.length = 0;
@@ -386,7 +390,7 @@
             b.vy = -150 - rand() * 350;
         }
         powerUps.length = 0;
-        slowTime = shieldTime = 0;
+        slowTime = shieldTime = autoTime = 0;
         playerFall = { x: mouse.x, y: mouse.y, vx: 0, vy: -450 };
     }
 
@@ -464,7 +468,8 @@
 
     const powerUps = [];
     let powerUpTimer = 0;
-    let slowTime = 0, shrinkTime = 0, shieldTime = 0, bloatTime = 0;
+    const AUTO_DURATION = 5;
+    let slowTime = 0, shrinkTime = 0, shieldTime = 0, bloatTime = 0, autoTime = 0;
     let playerR = PLAYER_RADIUS;
 
     // Eases back to full speed over the last half second of the slow-down.
@@ -475,6 +480,7 @@
             case PowerUpKind.Slow: return rgb(90, 220, 255);
             case PowerUpKind.Shrink: return rgb(255, 220, 70);
             case PowerUpKind.Bloat: return rgb(220, 60, 140);
+            case PowerUpKind.Auto: return rgb(160, 255, 90);
             default: return rgb(255, 255, 255);
         }
     }
@@ -484,6 +490,7 @@
         shrinkTime = Math.max(0, shrinkTime - dt);
         shieldTime = Math.max(0, shieldTime - dt);
         bloatTime = Math.max(0, bloatTime - dt);
+        autoTime = Math.max(0, autoTime - dt);
 
         // Player radius slides smoothly between normal, shrunk and bloated
         const targetR = shrinkTime > 0 ? SHRUNK_RADIUS : bloatTime > 0 ? BLOAT_RADIUS : PLAYER_RADIUS;
@@ -514,7 +521,7 @@
             const y = margin + rand() * (H - 2 * margin);
             if (dist(x, y, mouse.x, mouse.y) < 180) continue; // make the player go for it
             if (powerUps.some(p => dist(x, y, p.x, p.y) < 100)) continue;
-            powerUps.push({ x, y, kind: randInt(0, 4), life: POWERUP_LIFE, age: 0 });
+            powerUps.push({ x, y, kind: randInt(0, 5), life: POWERUP_LIFE, age: 0 });
             return;
         }
     }
@@ -526,7 +533,74 @@
             case PowerUpKind.Shrink: shrinkTime = SHRINK_DURATION; bloatTime = 0; showBanner('TINY!', powerUpColor(kind)); break;
             case PowerUpKind.Bloat: bloatTime = BLOAT_DURATION; shrinkTime = 0; showBanner('CURSED! BLOATED!', powerUpColor(kind)); break;
             case PowerUpKind.Shield: shieldTime = SHIELD_DURATION; showBanner('INVULNERABLE!', powerUpColor(kind)); break;
+            case PowerUpKind.Auto:
+                if (autoTime <= 0) autoVel = { x: 0, y: 0 };
+                autoTime = AUTO_DURATION;
+                showBanner('AUTOPILOT!', powerUpColor(kind));
+                break;
         }
+    }
+
+    // ---- Autopilot: steers the red ball by itself for a few seconds ----
+    // Each frame it tries a set of moves (16 directions at two speeds, or standing still), predicts where
+    // every ball will be over the next fraction of a second, and picks the move that stays clearest.
+
+    const AUTO_SPEED = 480, AUTO_HORIZON = 0.6, AUTO_SAMPLES = 6;
+    const AUTO_MOVES = [{ dx: 0, dy: 0, speed: 0 }];
+    for (let i = 0; i < 16; i++)
+        for (const speed of [AUTO_SPEED, AUTO_SPEED * 0.5])
+            AUTO_MOVES.push({ dx: Math.cos(i / 16 * TAU), dy: Math.sin(i / 16 * TAU), speed });
+    let autoVel = { x: 0, y: 0 };
+
+    // Where (and how big) ball b will be after `t` seconds of ball time. `playerAt(t)` gives the
+    // player's position at a ball time, used to aim balls that are about to rush.
+    function predictBall(b, t, playerAt) {
+        let x = b.x + b.vx * t, y = b.y + b.vy * t, r = b.r;
+        if (b.mode === Mode.RushWarning && t > b.modeTime) {
+            // It launches at wherever the player is when its wind-up ends
+            const sx = b.x + b.vx * b.modeTime, sy = b.y + b.vy * b.modeTime;
+            const target = playerAt(b.modeTime);
+            const len = Math.max(1, dist(sx, sy, target.x, target.y));
+            const dash = rushDashSpeed(b) * (t - b.modeTime);
+            x = sx + (target.x - sx) / len * dash;
+            y = sy + (target.y - sy) / len * dash;
+        }
+        if (b.mode === Mode.GrowWarning || b.mode === Mode.Growing) r = b.bigR;
+        if (b.mode === Mode.Resizing) r = Math.max(b.r, b.targetR);
+        return { x: clamp(x, r, W - r), y: clamp(y, r, H - r), r };
+    }
+
+    function autoPilot(dt) {
+        const timeScale = ballTimeScale(); // in slow-mo the balls cover less ground
+        const curSpeed = Math.hypot(autoVel.x, autoVel.y);
+        let best = AUTO_MOVES[0], bestScore = Infinity;
+
+        for (const m of AUTO_MOVES) {
+            const playerAt = t => clampPlayer({ x: mouse.x + m.dx * m.speed * t, y: mouse.y + m.dy * m.speed * t });
+            let score = 0, end = mouse;
+            for (let k = 1; k <= AUTO_SAMPLES; k++) {
+                const t = AUTO_HORIZON * k / AUTO_SAMPLES;
+                const w = (AUTO_SAMPLES + 1 - k) / AUTO_SAMPLES; // the near future matters most
+                const p = end = playerAt(t);
+                for (const b of balls) {
+                    const q = predictBall(b, t * timeScale, bt => playerAt(bt / timeScale));
+                    const gap = dist(p.x, p.y, q.x, q.y) - q.r - playerR;
+                    score += w * (gap < 4 ? 40 : Math.exp(-gap / 35));
+                }
+                // Corners and walls are where you get pinned
+                const wallGap = Math.min(p.x, W - p.x, p.y, H - p.y) - playerR;
+                score += w * 0.4 * Math.exp(-wallGap / 40);
+            }
+            score += 0.2 * dist(end.x, end.y, W / 2, H / 2) / W;    // drift back towards open space
+            if (curSpeed > 1 && m.speed > 0)                          // don't zig-zag for nothing
+                score += 0.08 * (1 - (m.dx * autoVel.x + m.dy * autoVel.y) / curSpeed);
+            if (score < bestScore) { bestScore = score; best = m; }
+        }
+
+        const k = Math.min(1, dt * 12);
+        autoVel.x += (best.dx * best.speed - autoVel.x) * k;
+        autoVel.y += (best.dy * best.speed - autoVel.y) * k;
+        mouse = clampPlayer({ x: mouse.x + autoVel.x * dt, y: mouse.y + autoVel.y * dt });
     }
 
     // ---- Rare events: join and split ----
@@ -655,6 +729,12 @@
     const GROW_WARN_TIME = 0.9, GROW_UP = 0.35, GROW_HOLD = 10, GROW_DOWN = 0.45;
     const GROW_TOTAL = GROW_UP + GROW_HOLD + GROW_DOWN;
 
+    // Resize event: balls permanently grow or shrink, after a short warning
+    const RESIZE_LIGHT = rgb(235, 235, 250), RESIZE_DARK = rgb(90, 95, 140);
+    const RESIZE_WARN_TIME = 0.8, RESIZE_TIME = 0.4;
+    const RESIZE_GROW = 1.5, RESIZE_SHRINK = 0.65;
+    const RESIZE_MIN_RADIUS = 8, RESIZE_MAX_RADIUS = JOIN_MAX_RADIUS;
+
     let eventTimer = 0;
     let bannerText = '';
     let bannerColor = WHITE;
@@ -665,7 +745,7 @@
         const d = currentDifficulty();
         eventTimer = d.eventEvery * (0.7 + rand() * 0.6);
         const count = randInt(1, d.maxEventBalls + 1);
-        const kind = randInt(0, 5);
+        const kind = randInt(0, 6);
 
         // Rare: two balls join into one, or one ball splits in two
         if (rand() < RARE_EVENT_CHANCE && (randInt(0, 2) === 0 ? tryJoin() || trySplit() : trySplit() || tryJoin()))
@@ -673,7 +753,22 @@
 
         const normal = () => balls.filter(b => b.mode === Mode.Normal);
 
-        if (kind === 2) {
+        if (kind === 5) {
+            // Resize: a few balls permanently grow or shrink. Growing balls must stay clear of the player.
+            const grow = randInt(0, 2) === 0;
+            const picks = shuffle(normal().filter(b => grow
+                ? b.r < RESIZE_MAX_RADIUS - 2 &&
+                  dist(b.x, b.y, mouse.x, mouse.y) > Math.min(b.r * RESIZE_GROW, RESIZE_MAX_RADIUS) + PLAYER_RADIUS + 80
+                : b.r > RESIZE_MIN_RADIUS + 2)).slice(0, count);
+            if (picks.length === 0) return;
+            for (const b of picks) {
+                b.mode = Mode.Resizing;
+                b.modeTime = RESIZE_WARN_TIME + RESIZE_TIME;
+                b.baseR = b.r;
+                b.targetR = grow ? Math.min(b.r * RESIZE_GROW, RESIZE_MAX_RADIUS) : Math.max(b.r * RESIZE_SHRINK, RESIZE_MIN_RADIUS);
+            }
+            showBanner(grow ? 'GROW!' : 'SHRINK!', RESIZE_LIGHT);
+        } else if (kind === 2) {
             // Giant: one ball swells up for a moment. Only a ball whose full size won't land on the player.
             const pick = pickRandom(normal()
                 .map(b => ({ ball: b, big: clamp(b.r * 3, 70, 95) }))
@@ -749,7 +844,7 @@
     let idleTime = 0;
 
     function updateIdle(dt) {
-        if (dist(mouse.x, mouse.y, idleAnchor.x, idleAnchor.y) > IDLE_MOVE_RADIUS) {
+        if (autoTime > 0 || dist(mouse.x, mouse.y, idleAnchor.x, idleAnchor.y) > IDLE_MOVE_RADIUS) {
             idleAnchor = { x: mouse.x, y: mouse.y };
             idleTime = 0;
             return;
@@ -785,6 +880,8 @@
         bannerTime = BANNER_DURATION;
     }
 
+    const rushDashSpeed = b => Math.max(b.cruiseSpeed * 2, 450 * currentDifficulty().speed);
+
     function updateBehavior(b, dt) {
         const d = currentDifficulty();
         switch (b.mode) {
@@ -796,7 +893,7 @@
                 if (b.modeTime <= 0) {
                     const dx = mouse.x - b.x, dy = mouse.y - b.y;
                     const len = Math.max(1, Math.hypot(dx, dy));
-                    const dash = Math.max(b.cruiseSpeed * 2, 450 * d.speed);
+                    const dash = rushDashSpeed(b);
                     b.vx = dx / len * dash;
                     b.vy = dy / len * dash;
                     b.mode = Mode.Rushing;
@@ -888,6 +985,20 @@
                 b.r = b.baseR + (b.bigR - b.baseR) * s;
                 if (b.modeTime <= 0) {
                     b.r = b.baseR;
+                    b.mode = Mode.Normal;
+                }
+                break;
+            }
+
+            case Mode.Resizing: {
+                // Hold during the warning, then ease to the new size and keep it
+                const wasWarning = b.modeTime > RESIZE_TIME;
+                b.modeTime -= dt;
+                const s = smoothStep(1 - b.modeTime / RESIZE_TIME);
+                b.r = b.baseR + (b.targetR - b.baseR) * s;
+                if (wasWarning && b.modeTime <= RESIZE_TIME) addPop(b.x, b.y, b.baseR, RESIZE_LIGHT);
+                if (b.modeTime <= 0) {
+                    b.r = b.targetR;
                     b.mode = Mode.Normal;
                 }
                 break;
@@ -1036,6 +1147,12 @@
                     line(x + dx * 11, y + dy * 11, x + dx * 8, y + dy * 11, fill, 2);
                 }
                 break;
+            case PowerUpKind.Auto: // steering wheel
+                strokeCircle(x, y, 8, fill, 2);
+                fillCircle(x, y, 2.5, fill);
+                for (const a of [-Math.PI / 2, Math.PI / 6, Math.PI * 5 / 6])
+                    line(x, y, x + Math.cos(a) * 8, y + Math.sin(a) * 8, fill, 2);
+                break;
             case PowerUpKind.Shield: // shield shape
                 poly([[x, y - 9], [x + 8, y - 6], [x + 7, y + 2], [x, y + 10], [x - 7, y + 2], [x - 8, y - 6]]);
                 break;
@@ -1043,6 +1160,15 @@
     }
 
     function drawPlayerEffects(player) {
+        // Autopilot: three dots orbiting the player; they flicker in the last second
+        if (autoTime > 0 && (autoTime > 1 || Math.floor(autoTime * 12) % 2 === 0)) {
+            const c = css(powerUpColor(PowerUpKind.Auto), 230);
+            for (let i = 0; i < 3; i++) {
+                const a = survived * 6 + i * TAU / 3;
+                fillCircle(player.x + Math.cos(a) * (playerR + 7), player.y + Math.sin(a) * (playerR + 7), 3, c);
+            }
+        }
+
         if (shieldTime <= 0) return;
         // Bubble around the player; flickers in the last second as a warning
         const visible = shieldTime > 1 || Math.floor(shieldTime * 12) % 2 === 0;
@@ -1070,6 +1196,7 @@
         bar('Tiny', shrinkTime, SHRINK_DURATION, PowerUpKind.Shrink);
         bar('Shield', shieldTime, SHIELD_DURATION, PowerUpKind.Shield);
         bar('Cursed: big', bloatTime, BLOAT_DURATION, PowerUpKind.Bloat);
+        bar('Autopilot', autoTime, AUTO_DURATION, PowerUpKind.Auto);
     }
 
     function drawPops() {
@@ -1113,6 +1240,18 @@
             case Mode.Growing:
                 drawBall(b.x, b.y, b.r, GIANT_LIGHT, GIANT_DARK);
                 break;
+            case Mode.Resizing: {
+                // Dashed outline of the new size; the ball flashes until it starts changing
+                if (b.modeTime > RESIZE_TIME) {
+                    const pulse = 0.5 + 0.5 * Math.sin(b.modeTime * 25);
+                    strokeCircle(b.x, b.y, b.targetR, css(RESIZE_LIGHT, 90 + 120 * pulse), 2, 'dash', survived * 6);
+                    const on = Math.floor(b.modeTime * 12) % 2 === 0;
+                    drawBall(b.x, b.y, b.r, on ? RESIZE_LIGHT : NORMAL_LIGHT, on ? RESIZE_DARK : NORMAL_DARK);
+                } else {
+                    drawBall(b.x, b.y, b.r, RESIZE_LIGHT, RESIZE_DARK);
+                }
+                break;
+            }
             case Mode.Joining: {
                 // Pulsing tether between the pair (drawn once, by whichever comes first in the list)
                 const p = b.partner;
