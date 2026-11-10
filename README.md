@@ -18,7 +18,7 @@ Then go to <http://localhost:8123>.
 
 - Click (or press Space, Enter or R) to start. The mouse is captured while you play, and moving it moves the red ball.
 - Touching a blue ball ends the run. Your best time is saved for each difficulty.
-- **Don't camp.** If you stand still for 3 seconds, the two nearest balls rush at you. A closing orange ring warns you first.
+- **Don't camp.** If you stand still for 3 seconds, the two nearest balls rush at you. A closing orange ring and a **MOVE IT!** banner warn you first, then **INCOMING!** shows when the balls come at you.
 - Press **Esc** to pause. The pause menu has music and sound-effect volume sliders (drag them, or pick one with ↑/↓ and adjust with ←/→) and lets you quit to the menu.
 
 ### Difficulty
@@ -57,8 +57,6 @@ Power-ups appear now and then and disappear after 8 seconds. Touch one to grab i
 | Shield (white) | Invulnerable for 3 s. |
 | Arrows out (pink, spinning dashed ring) | Cursed: you get bigger for 5 s. |
 | Steering wheel (green) | Autopilot: the red ball dodges by itself for 5 s. You can still be hit. |
-| Heart (red, gold sparkles) | Very rare (about 1 in 25 power-ups). Extra life: the next hit costs the life instead of ending the run, followed by 2 s of invulnerability. You can hold up to 3; they show as hearts in the top bar. |
-
 ## Files
 
 - `index.html`: the page and canvas.
