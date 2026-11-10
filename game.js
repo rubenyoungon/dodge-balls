@@ -67,6 +67,7 @@
             targetR: 0,      // new permanent radius during a resize event
             partner: null,   // the ball this one is joining with
             frozenTime: 0,   // seconds left frozen in place (freeze power-up); its event is paused meanwhile
+            newTime: 0,      // seconds left of the "just arrived" highlight
             trail: [],
             trailColor: WHITE,
         }, props);
@@ -80,7 +81,7 @@
         b.vy *= speed / s;
     }
 
-    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5 }; // Bloat is cursed: it makes you bigger
+    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5, Destroy: 6 }; // Bloat is cursed: it makes you bigger
 
     const DIFFICULTIES = [
         { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, color: rgb(60, 170, 100) },
@@ -391,9 +392,11 @@
 
             const angle = rand() * TAU;
             const speed = (120 + rand() * 140 + survived * 3) * currentDifficulty().speed;
-            balls.push(makeBall({ x, y, r, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed }));
-            return;
+            const b = makeBall({ x, y, r, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed });
+            balls.push(b);
+            return b;
         }
+        return null;
     }
 
     function update(dt) {
@@ -410,8 +413,7 @@
             updateTrails();
             updatePowerUps(dt);
             updatePops(dt);
-
-            updateIdle(dt);
+            for (const b of balls) b.newTime = Math.max(0, b.newTime - dt);            updateIdle(dt);
 
             survived += dt;
             eventTimer -= dt;
@@ -420,7 +422,8 @@
             spawnTimer += dt;
             if (spawnTimer >= currentDifficulty().newBallEvery) {
                 spawnTimer = 0;
-                spawnBall();
+                const b = spawnBall();
+                if (b) b.newTime = NEW_BALL_HIGHLIGHT; // starting balls don't get this, only ones added mid-run
             }
 
             const hit = shieldTime <= 0 && balls.some(b => dist(b.x, b.y, mouse.x, mouse.y) < b.r + playerR);
@@ -451,6 +454,7 @@
             b.mode = Mode.Normal;
             b.partner = null;
             b.frozenTime = 0;
+            b.newTime = 0;
             b.trail.length = 0;
             b.vx *= 0.3;
             b.vy = -150 - rand() * 350;
@@ -552,6 +556,7 @@
     let powerUpTimer = 0;
     const AUTO_DURATION = 5;
     const FREEZE_DURATION = 4;
+    const DESTROY_CHANCE = 0.06; // the bomb is rare: about 1 in 17 power-ups
     let slowTime = 0, shrinkTime = 0, shieldTime = 0, bloatTime = 0, autoTime = 0;
     let playerR = PLAYER_RADIUS;
 
@@ -565,6 +570,7 @@
             case PowerUpKind.Bloat: return rgb(220, 60, 140);
             case PowerUpKind.Auto: return rgb(160, 255, 90);
             case PowerUpKind.Freeze: return rgb(170, 200, 255);
+            case PowerUpKind.Destroy: return rgb(255, 150, 40);
             default: return rgb(255, 255, 255);
         }
     }
@@ -575,8 +581,7 @@
         shieldTime = Math.max(0, shieldTime - dt);
         bloatTime = Math.max(0, bloatTime - dt);
         autoTime = Math.max(0, autoTime - dt);
-        for (const b of balls) b.frozenTime = Math.max(0, b.frozenTime - dt);
-        // Player radius slides smoothly between normal, shrunk and bloated
+        for (const b of balls) b.frozenTime = Math.max(0, b.frozenTime - dt);        // Player radius slides smoothly between normal, shrunk and bloated
         const targetR = shrinkTime > 0 ? SHRUNK_RADIUS : bloatTime > 0 ? BLOAT_RADIUS : PLAYER_RADIUS;
         playerR += (targetR - playerR) * Math.min(1, dt * 10);
 
@@ -605,7 +610,7 @@
             const y = margin + rand() * (H - 2 * margin);
             if (dist(x, y, mouse.x, mouse.y) < 180) continue; // make the player go for it
             if (powerUps.some(p => dist(x, y, p.x, p.y) < 100)) continue;
-            const kind = randInt(0, 6);
+            const kind = rand() < DESTROY_CHANCE ? PowerUpKind.Destroy : randInt(0, 6);
             powerUps.push({ x, y, kind, life: POWERUP_LIFE, age: 0 });
             return;
         }
@@ -634,6 +639,24 @@
                     addPop(target.x, target.y, target.r, powerUpColor(kind));
                 }
                 showBanner('FROZEN!', powerUpColor(kind));
+                break;
+            }
+            case PowerUpKind.Destroy: {
+                const target = pickRandom(balls);
+                if (target) {
+                    // A ball that was merging with it just carries on alone
+                    for (const b of balls)
+                        if (b.partner === target) {
+                            b.partner = null;
+                            b.mode = Mode.Normal;
+                            setSpeed(b, b.cruiseSpeed);
+                        }
+                    balls = balls.filter(b => b !== target);
+                    addPop(target.x, target.y, target.r, powerUpColor(kind));
+                    addPop(target.x, target.y, target.r + 20, WHITE);
+                    sound.play(700, target.r);
+                }
+                showBanner('BOOM!', powerUpColor(kind));
                 break;
             }
         }
@@ -1232,6 +1255,14 @@
             // The cursed one has a jagged, rotating dashed ring
             if (p.kind === PowerUpKind.Bloat) strokeCircle(p.x, y, POWERUP_RADIUS, css(c), 2.5, 'dash', -p.age * 6);
             else strokeCircle(p.x, y, POWERUP_RADIUS, css(c), 2.5);
+            // The rare bomb has sparks circling it so it stands out
+            if (p.kind === PowerUpKind.Destroy)
+                for (let i = 0; i < 4; i++) {
+                    const a = p.age * 2.5 + i * TAU / 4;
+                    const twinkle = 0.5 + 0.5 * Math.sin(p.age * 9 + i * 2);
+                    fillCircle(p.x + Math.cos(a) * (POWERUP_RADIUS + 9), y + Math.sin(a) * (POWERUP_RADIUS + 9),
+                        1.5 + 1.5 * twinkle, css(rgb(255, 230, 120), 150 + 100 * twinkle));
+                }
 
             drawPowerUpIcon(p.kind, p.x, y, c);
         }
@@ -1278,6 +1309,13 @@
                 break;
             case PowerUpKind.Shield: // shield shape
                 poly([[x, y - 9], [x + 8, y - 6], [x + 7, y + 2], [x, y + 10], [x - 7, y + 2], [x - 8, y - 6]]);
+                break;
+            case PowerUpKind.Destroy: // bomb with a lit fuse
+                fillCircle(x - 1, y + 2, 7, fill);
+                ctx.fillStyle = fill;
+                ctx.fillRect(x + 2, y - 8, 4, 4); // the cap
+                line(x + 4, y - 8, x + 7, y - 11, fill, 1.5); // the fuse
+                fillCircle(x + 8, y - 12, 2, css(rgb(255, 240, 160)));
                 break;
             case PowerUpKind.Freeze: // snowflake
                 for (let k = 0; k < 3; k++) {
@@ -1452,6 +1490,32 @@
                 drawBall(b.x, b.y, b.r, NORMAL_LIGHT, NORMAL_DARK);
                 break;
         }
+        drawNewBallHighlight(b);
+    }
+
+    // A ball added mid-run flashes white and sends out bright rings so you notice where it appeared.
+    const NEW_BALL_HIGHLIGHT = 2;
+    const NEW_BALL_LIGHT = rgb(255, 255, 255), NEW_BALL_GLOW = rgb(255, 230, 120);
+    function drawNewBallHighlight(b) {
+        if (b.newTime <= 0) return;
+        const age = NEW_BALL_HIGHLIGHT - b.newTime;
+        const fade = Math.min(1, b.newTime / 0.5); // everything fades out over the last half second
+
+        // Glow behind the ball and a white flash that blinks a few times
+        fillCircle(b.x, b.y, b.r + 10, css(NEW_BALL_GLOW, 70 * fade));
+        if (Math.floor(age * 6) % 2 === 0) fillCircle(b.x, b.y, b.r, css(NEW_BALL_LIGHT, 170 * fade));
+
+        // Three rings rippling a short way outward, one after another
+        for (let k = 0; k < 3; k++) {
+            const t = (age * 1.5 + k / 3) % 1;
+            strokeCircle(b.x, b.y, b.r + 5 + 22 * t, css(NEW_BALL_GLOW, 230 * (1 - t) * fade), 2 * (1 - t) + 1);
+        }
+        strokeCircle(b.x, b.y, b.r + 4, css(NEW_BALL_LIGHT, 230 * fade), 2.5);
+
+        // "NEW BALL!" label riding above the ball (below it when the ball is at the top edge)
+        const above = b.y - b.r - 22 > 40;
+        drawText('NEW BALL!', clamp(b.x, 40, W - 40), above ? b.y - b.r - 10 : b.y + b.r + 10, 13, true,
+            css(NEW_BALL_GLOW, 255 * fade), 'center', above ? 'bottom' : 'top');
     }
 
     function drawBanner() {
