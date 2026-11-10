@@ -374,6 +374,7 @@ class GameAudio {
         this.musicData = null;
         this.ctx = null;
         this.userVolume = 1;
+        this.sfxVolume = 1;
         this.musicWanted = false;
         this.musicVoice = null;
         this.playedThisFrame = 0;
@@ -394,6 +395,9 @@ class GameAudio {
             this.musicBus = this.ctx.createGain();
             this.musicBus.gain.value = GameAudio.MUSIC_LEVEL * this.userVolume;
             this.musicBus.connect(this.master);
+            this.sfxBus = this.ctx.createGain();
+            this.sfxBus.gain.value = this.sfxVolume;
+            this.sfxBus.connect(this.master);
             this.clickBuffers = this.clickData.map(d => this._buffer(d));
             this.loseBuffer = this._buffer(this.loseData);
             this._onMusicReady();
@@ -420,6 +424,19 @@ class GameAudio {
         this.userVolume = Math.min(1, Math.max(0, v));
         if (this.musicBus)
             this.musicBus.gain.setTargetAtTime(GameAudio.MUSIC_LEVEL * this.userVolume, this.ctx.currentTime, 0.01);
+    }
+
+    /** Sound-effect volume, 0..1 (collisions and the game-over sound). */
+    get effectsVolume() { return this.sfxVolume; }
+    set effectsVolume(v) {
+        this.sfxVolume = Math.min(1, Math.max(0, v));
+        if (this.sfxBus)
+            this.sfxBus.gain.setTargetAtTime(this.sfxVolume, this.ctx.currentTime, 0.01);
+    }
+
+    /** Plays a medium thud so the player can hear the effect volume they picked. */
+    previewEffect() {
+        if (this.ctx && this.ctx.state === 'running') this._oneShot(this.clickBuffers[0], 0.45, 1);
     }
 
     /** Starts the soundtrack from the top; a track that is still playing dips out first. */
@@ -472,7 +489,7 @@ class GameAudio {
         const gain = this.ctx.createGain();
         gain.gain.value = volume;
         src.connect(gain);
-        gain.connect(this.master);
+        gain.connect(this.sfxBus);
         src.start();
     }
 

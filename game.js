@@ -79,7 +79,7 @@
         b.vy *= speed / s;
     }
 
-    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4 }; // Bloat is cursed: it makes you bigger
+    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Life: 5 }; // Bloat is cursed: it makes you bigger
 
     const DIFFICULTIES = [
         { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, color: rgb(60, 170, 100) },
@@ -108,7 +108,8 @@
 
     let paused = false;
     let pausedAt = 0;
-    let draggingVolume = false;
+    let draggingSlider = -1;     // index into SLIDERS being dragged, or -1
+    let focusedSlider = 0;      // the slider the arrow keys adjust
     let locked = false;
     let pendingStart = false;   // waiting for the lock before starting a game
     let pendingResume = false;  // waiting for the lock before resuming
@@ -122,7 +123,12 @@
     let dragId = null;     // the pointer currently steering the ball
     let dragLast = null;   // its last position, in game units
 
-    sound.musicVolume = clamp(Number(store.get('volume', 1)), 0, 1);
+    // Volume sliders in the pause menu: [label, storage key, sound property]
+    const SLIDERS = [
+        ['Music volume', 'volume', 'musicVolume'],
+        ['Effects volume', 'effectsVolume', 'effectsVolume'],
+    ];
+    for (const [, key, prop] of SLIDERS) sound[prop] = clamp(Number(store.get(key, 1)), 0, 1);
 
     function requestLock() {
         if (document.pointerLockElement === canvas) { onLocked(); return; }
@@ -150,7 +156,7 @@
         } else if (pendingResume) {
             pendingResume = false;
             paused = false;
-            draggingVolume = false;
+            draggingSlider = -1;
         }
     }
 
@@ -182,13 +188,13 @@
             requestLock();
         } else {
             paused = false;
-            draggingVolume = false;
+            draggingSlider = -1;
         }
     }
 
     function quitToMenu() {
         paused = false;
-        draggingVolume = false;
+        draggingSlider = -1;
         if (playing()) sound.stopMusic();
         balls = [];
         powerUps.length = 0;
@@ -222,7 +228,8 @@
             dragLast = p;
         }
         if (paused) {
-            if (contains(inflate(sliderRect(), 10, 14), p)) { draggingVolume = true; setVolumeFromX(p.x); }
+            const hit = SLIDERS.findIndex((_, i) => contains(inflate(sliderRect(i), 10, 14), p));
+            if (hit >= 0) { draggingSlider = focusedSlider = hit; setVolumeFromX(p.x); }
             else if (contains(resumeButton(), p)) resume();
             else if (contains(quitButton(), p)) quitToMenu();
             return;
@@ -249,7 +256,7 @@
             const dx = p.x - dragLast.x, dy = p.y - dragLast.y;
             dragLast = p;
             cursor = p;
-            if (draggingVolume) setVolumeFromX(p.x);
+            if (draggingSlider >= 0) setVolumeFromX(p.x);
             // Move the ball by the finger's movement, not to the finger, so it stays visible.
             if (playing() && !paused && autoTime <= 0)
                 mouse = clampPlayer({ x: mouse.x + dx * TOUCH_SPEED, y: mouse.y + dy * TOUCH_SPEED });
@@ -265,7 +272,7 @@
             return;
         }
         cursor = toGame(e);
-        if (draggingVolume) setVolumeFromX(cursor.x);
+        if (draggingSlider >= 0) setVolumeFromX(cursor.x);
         if (!playing()) mouse = clampPlayer(cursor);
     });
 
@@ -276,8 +283,12 @@
             cursor = { x: -1, y: -1 }; // no hover effects left behind by a finger
             sound.unlock(); // iOS only allows starting audio on the end of a touch
         }
-        if (draggingVolume) store.set('volume', sound.musicVolume);
-        draggingVolume = false;
+        if (draggingSlider >= 0) {
+            const [, key, prop] = SLIDERS[draggingSlider];
+            store.set(key, sound[prop]);
+            if (prop === 'effectsVolume') sound.previewEffect();
+        }
+        draggingSlider = -1;
     }
     window.addEventListener('pointerup', pointerEnd);
     window.addEventListener('pointercancel', pointerEnd);
@@ -294,9 +305,14 @@
             return;
         }
         if (paused) {
-            if (e.code === 'ArrowLeft') sound.musicVolume -= 0.05;
-            if (e.code === 'ArrowRight') sound.musicVolume += 0.05;
-            store.set('volume', sound.musicVolume);
+            if (e.code === 'ArrowUp') focusedSlider = Math.max(0, focusedSlider - 1);
+            if (e.code === 'ArrowDown') focusedSlider = Math.min(SLIDERS.length - 1, focusedSlider + 1);
+            if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+                const [, key, prop] = SLIDERS[focusedSlider];
+                sound[prop] += e.code === 'ArrowLeft' ? -0.05 : 0.05;
+                store.set(key, sound[prop]);
+                if (prop === 'effectsVolume') sound.previewEffect();
+            }
             return;
         }
         if (gameOver || waitingToStart) {
@@ -318,9 +334,9 @@
 
     // ---- Menu layout ----
 
-    const MENU_W = 380, MENU_H = 260;
+    const MENU_W = 380, MENU_H = 320;
     const menuRect = () => rect(Math.floor((W - MENU_W) / 2), Math.floor((H - MENU_H) / 2), MENU_W, MENU_H);
-    const sliderRect = () => { const m = menuRect(); return rect(m.x + 40, m.y + 120, MENU_W - 80, 8); };
+    const sliderRect = i => { const m = menuRect(); return rect(m.x + 40, m.y + 115 + i * 62, MENU_W - 80, 8); };
     const resumeButton = () => { const m = menuRect(); return rect(m.x + 40, m.y + m.h - 70, 140, 44); };
     const quitButton = () => { const m = menuRect(); return rect(m.x + m.w - 180, m.y + m.h - 70, 140, 44); };
 
@@ -334,8 +350,8 @@
     }
 
     function setVolumeFromX(x) {
-        const s = sliderRect();
-        sound.musicVolume = (x - s.x) / s.w;
+        const s = sliderRect(draggingSlider);
+        sound[SLIDERS[draggingSlider][2]] = (x - s.x) / s.w;
     }
 
     // ---- Game flow ----
@@ -351,6 +367,7 @@
         powerUps.length = 0;
         powerUpTimer = 8;
         slowTime = shrinkTime = shieldTime = bloatTime = autoTime = 0;
+        lives = 0;
         autoVel = { x: 0, y: 0 };
         playerR = PLAYER_RADIUS;
         mouse = clampPlayer(mouse);
@@ -406,7 +423,15 @@
                 spawnBall();
             }
 
-            if (shieldTime <= 0 && balls.some(b => dist(b.x, b.y, mouse.x, mouse.y) < b.r + playerR)) {
+            const hit = shieldTime <= 0 && balls.some(b => dist(b.x, b.y, mouse.x, mouse.y) < b.r + playerR);
+            if (hit && lives > 0) {
+                // A spare life absorbs the hit, then a short shield gives time to get clear.
+                lives--;
+                shieldTime = Math.max(shieldTime, LIFE_SHIELD_DURATION);
+                addPop(mouse.x, mouse.y, playerR, powerUpColor(PowerUpKind.Life));
+                showBanner(lives > 0 ? `LIFE LOST! ${lives} LEFT` : 'LIFE LOST!', powerUpColor(PowerUpKind.Life));
+                sound.play(600, playerR);
+            } else if (hit) {
                 gameOver = true;
                 if (survived > best[difficultyIndex]) {
                     best[difficultyIndex] = survived;
@@ -516,7 +541,10 @@
     const powerUps = [];
     let powerUpTimer = 0;
     const AUTO_DURATION = 5;
+    // Extra life: very rare, and you can only bank a few.
+    const LIFE_CHANCE = 0.04, MAX_LIVES = 3, LIFE_SHIELD_DURATION = 2;
     let slowTime = 0, shrinkTime = 0, shieldTime = 0, bloatTime = 0, autoTime = 0;
+    let lives = 0; // spare lives on top of the one you're playing
     let playerR = PLAYER_RADIUS;
 
     // Eases back to full speed over the last half second of the slow-down.
@@ -528,6 +556,7 @@
             case PowerUpKind.Shrink: return rgb(255, 220, 70);
             case PowerUpKind.Bloat: return rgb(220, 60, 140);
             case PowerUpKind.Auto: return rgb(160, 255, 90);
+            case PowerUpKind.Life: return rgb(255, 80, 110);
             default: return rgb(255, 255, 255);
         }
     }
@@ -568,7 +597,8 @@
             const y = margin + rand() * (H - 2 * margin);
             if (dist(x, y, mouse.x, mouse.y) < 180) continue; // make the player go for it
             if (powerUps.some(p => dist(x, y, p.x, p.y) < 100)) continue;
-            powerUps.push({ x, y, kind: randInt(0, 5), life: POWERUP_LIFE, age: 0 });
+            const kind = lives < MAX_LIVES && rand() < LIFE_CHANCE ? PowerUpKind.Life : randInt(0, 5);
+            powerUps.push({ x, y, kind, life: POWERUP_LIFE, age: 0 });
             return;
         }
     }
@@ -584,6 +614,10 @@
                 if (autoTime <= 0) autoVel = { x: 0, y: 0 };
                 autoTime = AUTO_DURATION;
                 showBanner('AUTOPILOT!', powerUpColor(kind));
+                break;
+            case PowerUpKind.Life:
+                lives = Math.min(MAX_LIVES, lives + 1);
+                showBanner('EXTRA LIFE!', powerUpColor(kind));
                 break;
         }
     }
@@ -1156,6 +1190,14 @@
             // The cursed one has a jagged, rotating dashed ring
             if (p.kind === PowerUpKind.Bloat) strokeCircle(p.x, y, POWERUP_RADIUS, css(c), 2.5, 'dash', -p.age * 6);
             else strokeCircle(p.x, y, POWERUP_RADIUS, css(c), 2.5);
+            // The rare extra life has gold sparkles circling it so it stands out.
+            if (p.kind === PowerUpKind.Life)
+                for (let i = 0; i < 4; i++) {
+                    const a = p.age * 2.5 + i * TAU / 4;
+                    const twinkle = 0.5 + 0.5 * Math.sin(p.age * 9 + i * 2);
+                    fillCircle(p.x + Math.cos(a) * (POWERUP_RADIUS + 9), y + Math.sin(a) * (POWERUP_RADIUS + 9),
+                        1.5 + 1.5 * twinkle, css(rgb(255, 215, 90), 150 + 100 * twinkle));
+                }
 
             drawPowerUpIcon(p.kind, p.x, y, c);
         }
@@ -1203,7 +1245,24 @@
             case PowerUpKind.Shield: // shield shape
                 poly([[x, y - 9], [x + 8, y - 6], [x + 7, y + 2], [x, y + 10], [x - 7, y + 2], [x - 8, y - 6]]);
                 break;
+            case PowerUpKind.Life:
+                drawHeart(x, y, 9, fill);
+                break;
         }
+    }
+
+    /** A heart centered on (x, y), about 2*size wide. */
+    function drawHeart(x, y, size, fill) {
+        const s = size / 10;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 9 * s);
+        ctx.bezierCurveTo(x - 12 * s, y + 1 * s, x - 11 * s, y - 9 * s, x - 5 * s, y - 9 * s);
+        ctx.bezierCurveTo(x - 2 * s, y - 9 * s, x, y - 6 * s, x, y - 4 * s);
+        ctx.bezierCurveTo(x, y - 6 * s, x + 2 * s, y - 9 * s, x + 5 * s, y - 9 * s);
+        ctx.bezierCurveTo(x + 11 * s, y - 9 * s, x + 12 * s, y + 1 * s, x, y + 9 * s);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
     }
 
     function drawPlayerEffects(player) {
@@ -1425,21 +1484,25 @@
 
         drawText('PAUSED', m.x + m.w / 2, m.y + 42, 26, true, 'white', 'center', 'middle');
 
-        // Volume slider
-        const s = sliderRect();
-        const vol = sound.musicVolume;
-        drawText('Music volume', s.x, s.y - 30, 12, false, css(LIGHT_GRAY));
-        drawText(`${Math.round(vol * 100)}%`, s.x + s.w, s.y - 30, 12, false, 'white', 'right');
-        roundRectPath(s, 4);
-        ctx.fillStyle = css(rgb(60, 70, 90));
-        ctx.fill();
-        const filled = Math.floor(s.w * vol);
-        if (filled > 0) {
-            roundRectPath(rect(s.x, s.y, Math.max(filled, 8), s.h), 4);
-            ctx.fillStyle = css(rgb(70, 140, 255));
+        // Volume sliders
+        SLIDERS.forEach(([label, , prop], i) => {
+            const s = sliderRect(i);
+            const vol = sound[prop];
+            // With a keyboard, the label of the slider the arrow keys adjust is highlighted.
+            const focused = !touchMode && i === focusedSlider;
+            drawText(label, s.x, s.y - 30, 12, focused, focused ? 'white' : css(LIGHT_GRAY));
+            drawText(`${Math.round(vol * 100)}%`, s.x + s.w, s.y - 30, 12, false, 'white', 'right');
+            roundRectPath(s, 4);
+            ctx.fillStyle = css(rgb(60, 70, 90));
             ctx.fill();
-        }
-        drawBall(s.x + filled, s.y + s.h / 2, 11, WHITE, rgb(150, 170, 210));
+            const filled = Math.floor(s.w * vol);
+            if (filled > 0) {
+                roundRectPath(rect(s.x, s.y, Math.max(filled, 8), s.h), 4);
+                ctx.fillStyle = css(rgb(70, 140, 255));
+                ctx.fill();
+            }
+            drawBall(s.x + filled, s.y + s.h / 2, 11, WHITE, rgb(150, 170, 210));
+        });
 
         drawButton(resumeButton(), 'Resume', rgb(50, 110, 220));
         drawButton(quitButton(), 'Quit', rgb(200, 60, 60));
@@ -1540,8 +1603,13 @@
         if (playing()) { drawPlayerEffects(player); drawIdleWarning(player); drawActiveEffects(); }
 
         const d = currentDifficulty();
-        drawText(`Time: ${survived.toFixed(1)}s   Balls: ${balls.length}   Best (${d.name}): ${best[difficultyIndex].toFixed(1)}s`,
-            12, 10, 14, true, 'white');
+        const hud = `Time: ${survived.toFixed(1)}s   Balls: ${balls.length}   Best (${d.name}): ${best[difficultyIndex].toFixed(1)}s`;
+        drawText(hud, 12, 10, 14, true, 'white');
+        // Spare lives as hearts after the stats
+        if (playing()) {
+            const hx = 12 + ctx.measureText(hud).width + 22;
+            for (let i = 0; i < lives; i++) drawHeart(hx + i * 22, 19, 8, css(powerUpColor(PowerUpKind.Life)));
+        }
 
         drawBanner();
 
