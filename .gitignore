@@ -1,8 +1,2 @@
-# .NET build output
-bin/
-obj/
-*.user
-.vs/
-
 # Local tooling
 .claude/

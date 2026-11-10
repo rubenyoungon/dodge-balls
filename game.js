@@ -1,6 +1,6 @@
 'use strict';
 
-// Port of Program.cs. The game runs in a fixed 1000x700 coordinate space; the canvas
+// The game runs in a fixed 1000x700 coordinate space; the canvas
 // is scaled to fit the window. While playing, the mouse is captured with the Pointer
 // Lock API and the red ball moves by the mouse's movement.
 
@@ -305,6 +305,8 @@
         slowTime = shrinkTime = shieldTime = bloatTime = 0;
         playerR = PLAYER_RADIUS;
         mouse = clampPlayer(mouse);
+        idleAnchor = { x: mouse.x, y: mouse.y };
+        idleTime = 0;
         gameOver = false;
         waitingToStart = false;
         paused = false;
@@ -341,6 +343,8 @@
             updateTrails();
             updatePowerUps(dt);
             updatePops(dt);
+
+            updateIdle(dt);
 
             survived += dt;
             eventTimer -= dt;
@@ -732,6 +736,46 @@
             }
             showBanner('WOBBLE!', CURVE_LIGHT);
         }
+    }
+
+    // ---- Anti-camping: standing still sends the two nearest balls rushing at you ----
+
+    const IDLE_LIMIT = 3;          // seconds without moving before the punishment
+    const IDLE_MOVE_RADIUS = 30;   // moving less than this from where you stopped counts as standing still
+    const IDLE_WARN_TIME = 1.2;    // a ring closes in on the player over the last stretch
+    const IDLE_RUSH_MIN_DIST = 150; // too-close balls are skipped so the rush stays dodgeable
+    let idleAnchor = { x: W / 2, y: H / 2 };
+    let idleTime = 0;
+
+    function updateIdle(dt) {
+        if (dist(mouse.x, mouse.y, idleAnchor.x, idleAnchor.y) > IDLE_MOVE_RADIUS) {
+            idleAnchor = { x: mouse.x, y: mouse.y };
+            idleTime = 0;
+            return;
+        }
+        idleTime += dt;
+        if (idleTime < IDLE_LIMIT) return;
+
+        const picks = balls
+            .filter(b => b.mode === Mode.Normal && dist(b.x, b.y, mouse.x, mouse.y) > IDLE_RUSH_MIN_DIST)
+            .sort((a, b) => dist(a.x, a.y, mouse.x, mouse.y) - dist(b.x, b.y, mouse.x, mouse.y))
+            .slice(0, 2);
+        if (picks.length === 0) return; // nothing free right now; try again next frame
+        for (const b of picks) {
+            b.mode = Mode.RushWarning;
+            b.modeTime = 0.8;
+            b.cruiseSpeed = speedOf(b);
+            b.trailColor = RUSH_LIGHT;
+        }
+        showBanner(picks.length === 1 ? 'MOVE IT!' : 'MOVE IT! x2', RUSH_LIGHT);
+        idleTime = 0; // keep standing still and it happens again
+    }
+
+    function drawIdleWarning(player) {
+        const left = IDLE_LIMIT - idleTime;
+        if (left > IDLE_WARN_TIME) return;
+        const t = 1 - left / IDLE_WARN_TIME; // 0 → 1 as the rush gets closer
+        strokeCircle(player.x, player.y, playerR + 6 + 40 * (1 - t), css(RUSH_LIGHT, 60 + 160 * t), 2, 'dash', survived * 8);
     }
 
     function showBanner(text, color) {
@@ -1291,7 +1335,7 @@
 
         const player = gameOver ? playerFall : mouse;
         if (!waitingToStart) drawBall(player.x, player.y, playerR, rgb(255, 90, 90), rgb(160, 20, 20));
-        if (playing()) { drawPlayerEffects(player); drawActiveEffects(); }
+        if (playing()) { drawPlayerEffects(player); drawIdleWarning(player); drawActiveEffects(); }
 
         const d = currentDifficulty();
         drawText(`Time: ${survived.toFixed(1)}s   Balls: ${balls.length}   Best (${d.name}): ${best[difficultyIndex].toFixed(1)}s`,

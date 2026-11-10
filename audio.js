@@ -1,6 +1,6 @@
 'use strict';
 
-// Port of Sound.cs and Music.cs: every sound is synthesized from math, then played through Web Audio.
+// Every sound is synthesized from math, then played through Web Audio.
 
 const SR = 44100;
 
