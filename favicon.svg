@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+    <!-- The player's red ball: same colors and off-center highlight as drawBall in game.js -->
+    <defs>
+        <radialGradient id="ball" gradientUnits="userSpaceOnUse" cx="32" cy="32" r="33" fx="21" fy="21" fr="0">
+            <stop offset="0" stop-color="rgb(255, 90, 90)"/>
+            <stop offset="1" stop-color="rgb(160, 20, 20)"/>
+        </radialGradient>
+    </defs>
+    <circle cx="32" cy="32" r="30" fill="url(#ball)"/>
+</svg>
