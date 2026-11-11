@@ -218,9 +218,14 @@ function synthesizeEffects() {
     fx.shrink = make(0.45);
     tone(fx.shrink, 0, 0.4, 900, 260, { wave: 'tri', vol: 0.6 });
 
-    // Hunted: a two-tone alarm.
-    fx.hunted = make(0.6);
-    [0, 1, 2, 3].forEach(i => tone(fx.hunted, i * 0.14, 0.12, i % 2 ? 620 : 830, i % 2 ? 620 : 830, { wave: 'square', vol: 0.35 }));
+    // Hunted: a soft "ding-dong, ding-dong" chime. Rounded bell tones keep it friendly,
+    // while the repeated falling pair still reads as a heads-up.
+    fx.hunted = make(0.85);
+    [76, 72, 76, 72].forEach((n, i) => {
+        const at = i * 0.16;
+        tone(fx.hunted, at, 0.32, midi(n), midi(n), { vol: 0.6, attack: 0.01, decay: 0.12 });
+        tone(fx.hunted, at, 0.2, midi(n + 12), midi(n + 12), { wave: 'tri', vol: 0.12, attack: 0.01, decay: 0.05 });
+    });
 
     // Speed up: a revving engine-like rise.
     fx.speedUp = make(0.55);
@@ -673,8 +678,8 @@ class GameAudio {
 
     /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
     static EFFECT_LEVELS = {
-        powerUp: 0.4, curse: 0.35, slow: 0.4, tiny: 0.35, shield: 0.35, auto: 0.3, freeze: 0.4, boom: 0.6,
-        incoming: 0.25, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.3, speedUp: 0.3,
+        powerUp: 0.4, curse: 0.35, slow: 0.4, tiny: 0.35, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6,
+        incoming: 0.25, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.3,
         merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.25, expire: 0.25,
     };
 
