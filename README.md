@@ -21,6 +21,7 @@ Then go to <http://localhost:8123>.
 - A new ball joins every so often. A **NEW BALL!** banner announces it, and for 2 seconds the ball flashes white and sends out small golden rings so you can see where it appeared.
 - **Don't camp.** If you stand still for 3 seconds, the two nearest balls rush at you. A closing orange ring and a **MOVE IT!** banner warn you first, then **INCOMING!** shows when the balls come at you.
 - Press **Esc** to pause. The pause menu has music and sound-effect volume sliders (drag them, or pick one with ↑/↓ and adjust with ←/→) and lets you quit to the menu.
+- Every power-up and event has its own sound: a chime for good power-ups, a sour slide for curses, a boom for the bomb, an alarm when a ball hunts you, a whoosh when a ball launches at you, and so on. A soft blip tells you when a timed power-up runs out. These follow the sound-effect volume slider.
 
 ### Difficulty
 
@@ -66,6 +67,6 @@ Power-ups appear now and then and disappear after 8 seconds. Touch one to grab i
 
 - `index.html`: the page and canvas.
 - `game.js`: game loop, physics, events, power-ups and drawing.
-- `audio.js`: synthesized collision sounds, the lose sound, and the music.
+- `audio.js`: synthesized collision sounds, power-up and event sounds, the lose sound, and the music.
 
 Settings (difficulty, music and effects volume, best times) are kept in the browser's `localStorage`.
