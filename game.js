@@ -576,7 +576,7 @@
     let powerUpTimer = 0;
     const AUTO_DURATION = 5;
     const FREEZE_DURATION = 4;
-    const DESTROY_CHANCE = 0.06; // the bomb is rare: about 1 in 17 power-ups
+    const DESTROY_CHANCE = 0.04; // the bomb is rare: about 1 in 25 power-ups
     const SLUGGISH_DURATION = 3.4, SLUGGISH_FACTOR = 0.5; // your moves only go half as far
     // The curses together are a bit rarer than one good power-up each, so grabbing stays worth it.
     const CURSE_CHANCE = 0.2;
@@ -691,7 +691,10 @@
                 break;
             }
             case PowerUpKind.Destroy: {
-                const target = pickRandom(balls);
+                // Takes out the ball closest to the player, the one most likely to hit them next.
+                let target = null;
+                for (const b of balls)
+                    if (!target || dist(b.x, b.y, mouse.x, mouse.y) < dist(target.x, target.y, mouse.x, mouse.y)) target = b;
                 if (target) {
                     // A ball that was merging with it just carries on alone
                     for (const b of balls)
