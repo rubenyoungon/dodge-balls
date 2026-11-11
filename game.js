@@ -90,7 +90,7 @@
     const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5, Destroy: 6, Sluggish: 7 };
 
     const DIFFICULTIES = [
-        { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, idleLimit: 5, color: rgb(60, 170, 100) },
+        { name: 'Easy', startBalls: 6, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, idleLimit: 5, color: rgb(60, 170, 100) },
         { name: 'Normal', startBalls: 8, speed: 1.0, newBallEvery: 30, eventEvery: 9, maxEventBalls: 2, idleLimit: 3, color: rgb(50, 110, 220) },
         { name: 'Hard', startBalls: 12, speed: 1.35, newBallEvery: 20, eventEvery: 6, maxEventBalls: 3, idleLimit: 2, color: rgb(200, 60, 60) },
     ];
