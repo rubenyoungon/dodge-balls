@@ -222,19 +222,26 @@ function synthesizeEffects() {
     fx.shrink = make(0.45);
     tone(fx.shrink, 0, 0.4, 900, 260, { wave: 'tri', vol: 0.6 });
 
-    // Hunted: a soft "ding-dong, ding-dong" chime. Rounded bell tones keep it friendly,
-    // while the repeated falling pair still reads as a heads-up.
+    // Hunted: a low, stalking pulse falling by a tritone. Each note sags slightly in pitch,
+    // a detuned saw adds a growl, and a quiet note a semitone off makes it sour and uneasy.
     fx.hunted = make(0.85);
-    [76, 72, 76, 72].forEach((n, i) => {
-        const at = i * 0.16;
-        tone(fx.hunted, at, 0.32, midi(n), midi(n), { vol: 0.6, attack: 0.01, decay: 0.12 });
-        tone(fx.hunted, at, 0.2, midi(n + 12), midi(n + 12), { wave: 'tri', vol: 0.12, attack: 0.01, decay: 0.05 });
+    [57, 51, 57, 51].forEach((n, i) => {
+        const at = i * 0.16, f = midi(n);
+        tone(fx.hunted, at, 0.3, f, f * 0.96, { vol: 0.6, attack: 0.01, decay: 0.13 });
+        tone(fx.hunted, at, 0.24, f * 1.008, f * 0.968, { wave: 'saw', vol: 0.22, attack: 0.01, decay: 0.09 });
+        tone(fx.hunted, at, 0.2, midi(n + 13), midi(n + 13) * 0.96, { wave: 'tri', vol: 0.07, attack: 0.01, decay: 0.06 });
     });
 
     // Speed up: a revving engine-like rise.
     fx.speedUp = make(0.55);
     tone(fx.speedUp, 0, 0.5, 90, 420, { wave: 'saw', vol: 0.5, vib: [30, 0.08] });
     noise(fx.speedUp, 0, 0.5, 800, 3000, { vol: 0.3 });
+
+    // Gravity well: a deep hum sinking in pitch while a hiss is sucked inward, swelling toward the pull.
+    fx.gravityWell = make(1.2);
+    tone(fx.gravityWell, 0, 1.15, 160, 45, { vol: 0.7, attack: 0.5, vib: [7, 0.04] });
+    tone(fx.gravityWell, 0, 1.15, 240, 68, { wave: 'tri', vol: 0.25, attack: 0.5 });
+    noise(fx.gravityWell, 0, 1.15, 5000, 200, { vol: 0.8, q: 0.7, env: p => Math.pow(p, 1.5) * (1 - p) * 3.5 });
 
     // Merge announced: two notes slide toward each other. Merged: a wet "gloop".
     fx.merge = make(0.5);
@@ -741,7 +748,7 @@ class GameAudio {
     /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
     static EFFECT_LEVELS = {
         powerUp: 0.4, curse: 0.12, bloat: 0.18, slow: 0.4, tiny: 0.08, shield: 0.35, auto: 0.14, freeze: 0.4, boom: 0.6, blast: 0.4,
-        incoming: 0.09, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.22,
+        incoming: 0.09, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.22, gravityWell: 0.35,
         merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.12, expire: 0.25,
     };
 
