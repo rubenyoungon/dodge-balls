@@ -185,9 +185,11 @@ function synthesizeEffects() {
         tone(fx.shield, 0, 0.85, midi(n), midi(n), { vol: 0.35, attack: 0.08, vib: [6, 0.006] });
     noise(fx.shield, 0, 0.6, 5000, 8000, { vol: 0.15 });
 
-    // Autopilot: robotic computer bleeps.
-    fx.auto = make(0.45);
-    [880, 1320, 990, 1760].forEach((f, i) => tone(fx.auto, i * 0.09, 0.07, f, f, { wave: 'square', vol: 0.35 }));
+    // Autopilot: a friendly little "boop-beep-boop" from a helpful robot: soft triangle blips that
+    // each glide up a touch, climbing a major chord.
+    fx.auto = make(0.5);
+    [74, 78, 81].forEach((n, i) =>
+        tone(fx.auto, i * 0.1, 0.16, midi(n) * 0.97, midi(n), { wave: 'tri', vol: 0.5, attack: 0.008, decay: 0.06 }));
 
     // Freeze: crystalline high tinkles over a cold hiss.
     fx.freeze = make(0.8);
@@ -738,8 +740,8 @@ class GameAudio {
 
     /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
     static EFFECT_LEVELS = {
-        powerUp: 0.4, curse: 0.35, bloat: 0.18, slow: 0.4, tiny: 0.18, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6, blast: 0.4,
-        incoming: 0.25, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.3,
+        powerUp: 0.4, curse: 0.12, bloat: 0.18, slow: 0.4, tiny: 0.08, shield: 0.35, auto: 0.14, freeze: 0.4, boom: 0.6, blast: 0.4,
+        incoming: 0.09, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.22,
         merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.12, expire: 0.25,
     };
 
