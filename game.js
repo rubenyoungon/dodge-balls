@@ -426,6 +426,7 @@
             updateIdle(dt);
 
             survived += dt;
+            sound.setMusicIntense(survived >= MUSIC_INTENSE_AFTER);
             eventTimer -= dt;
             if (eventTimer <= 0) triggerRandomEvent();
             updateBanners(dt);
@@ -590,6 +591,7 @@
     let playerR = PLAYER_RADIUS;
 
     // Eases back to full speed over the last half second of the slow-down.
+    const MUSIC_INTENSE_AFTER = 60; // seconds into a run before the soundtrack switches to its intense version
     const MUSIC_SLOW_DEPTH = 0.5; // the music slows by half as much as the balls (0.7x at full slow-mo)
     const ballTimeScale = () => slowTime <= 0 ? 1 : SLOW_FACTOR + (1 - SLOW_FACTOR) * (1 - Math.min(1, slowTime / 0.5));
 
