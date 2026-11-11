@@ -539,6 +539,7 @@ class GameAudio {
         this.sfxVolume = 1;
         this.musicWanted = false;
         this.musicVoice = null;
+        this.musicRate = 1;
         this.playedThisFrame = 0;
         runInSlices(Music.render(), 8, data => {
             this.musicData = data;
@@ -618,6 +619,13 @@ class GameAudio {
         }
     }
 
+    /** Music playback speed (1 = normal). Slowing it also lowers the pitch, like a tape winding down. */
+    setMusicRate(rate) {
+        if (Math.abs(rate - this.musicRate) < 0.001) return;
+        this.musicRate = rate;
+        if (this.musicVoice) this.musicVoice.src.playbackRate.setTargetAtTime(rate, this.ctx.currentTime, 0.05);
+    }
+
     _startVoice() {
         if (!this.ctx || !this.musicBuffer) return; // starts when the render finishes
         let at = this.ctx.currentTime;
@@ -628,6 +636,7 @@ class GameAudio {
         const src = this.ctx.createBufferSource();
         src.buffer = this.musicBuffer;
         src.loop = true;
+        src.playbackRate.value = this.musicRate;
         const gain = this.ctx.createGain();
         gain.gain.setValueAtTime(0, at);
         gain.gain.linearRampToValueAtTime(1, at + 0.05);

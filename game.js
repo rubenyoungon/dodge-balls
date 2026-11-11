@@ -406,6 +406,8 @@
     }
 
     function update(dt) {
+        // The music slows along with the balls during slow-mo, though not as far, so it stays listenable.
+        sound.setMusicRate(1 - (1 - ballTimeScale()) * MUSIC_SLOW_DEPTH);
         if (playing()) {
             mouse = clampPlayer(mouse); // the radius can change with power-ups
             if (autoTime > 0) autoPilot(dt);
@@ -588,6 +590,7 @@
     let playerR = PLAYER_RADIUS;
 
     // Eases back to full speed over the last half second of the slow-down.
+    const MUSIC_SLOW_DEPTH = 0.5; // the music slows by half as much as the balls (0.7x at full slow-mo)
     const ballTimeScale = () => slowTime <= 0 ? 1 : SLOW_FACTOR + (1 - SLOW_FACTOR) * (1 - Math.min(1, slowTime / 0.5));
 
     function powerUpColor(kind) {
