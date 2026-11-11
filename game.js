@@ -1888,7 +1888,7 @@
         if (playing()) { drawPlayerEffects(player); drawIdleWarning(player); drawActiveEffects(); }
 
         const d = currentDifficulty();
-        const hud = tr('hud', { time: I18N.num(survived), balls: balls.length, difficulty: tr(d.name), best: I18N.num(best[difficultyIndex]) });
+        const hud = tr('hud', { time: Math.floor(survived), balls: balls.length, difficulty: tr(d.name), best: Math.floor(best[difficultyIndex]) });
         drawText(hud, 12, 10, 14, true, 'white');
 
         drawBanners();
@@ -1896,7 +1896,7 @@
         if (waitingToStart)
             drawCenterText(tr('title'), `${tr('tagline')}\n${tr(touchMode ? 'startTap' : 'startClick')}`);
         else if (gameOver)
-            drawCenterText(tr('youLose'), `${tr('survived', { time: I18N.num(survived) })}\n${tr(touchMode ? 'againTap' : 'againClick')}`);
+            drawCenterText(tr('youLose'), `${tr('survived', { time: Math.floor(survived) })}\n${tr(touchMode ? 'againTap' : 'againClick')}`);
 
         drawPauseButton();
 
