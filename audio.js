@@ -246,13 +246,13 @@ function synthesizeEffects() {
     noise(fx.splitPop, 0, 0.12, 4000, 800, { vol: 1.4, env: p => Math.exp(-p * 6) });
     tone(fx.splitPop, 0, 0.2, 900, 300, { vol: 0.6, decay: 0.05 });
 
-    // New ball: a friendly two-note chime. Move it: a nagging double beep.
+    // New ball: a friendly two-note chime. Move it: a soft double blip, a nudge rather than an alarm.
     fx.newBall = make(0.6);
     tone(fx.newBall, 0, 0.5, midi(79), midi(79), { vol: 0.5, decay: 0.15 });
     tone(fx.newBall, 0.1, 0.5, midi(86), midi(86), { vol: 0.5, decay: 0.2 });
     fx.moveIt = make(0.35);
-    tone(fx.moveIt, 0, 0.1, 1000, 1000, { wave: 'square', vol: 0.35 });
-    tone(fx.moveIt, 0.15, 0.1, 1000, 1000, { wave: 'square', vol: 0.35 });
+    tone(fx.moveIt, 0, 0.12, midi(76), midi(76), { wave: 'tri', vol: 0.35, decay: 0.05 });
+    tone(fx.moveIt, 0.15, 0.12, midi(76), midi(76), { wave: 'tri', vol: 0.35, decay: 0.05 });
 
     // A power-up running out: a soft descending blip.
     fx.expire = make(0.3);
@@ -680,7 +680,7 @@ class GameAudio {
     static EFFECT_LEVELS = {
         powerUp: 0.4, curse: 0.35, slow: 0.4, tiny: 0.35, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6,
         incoming: 0.25, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.3,
-        merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.25, expire: 0.25,
+        merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.12, expire: 0.25,
     };
 
     /** Plays a named power-up or event sound. The same sound won't stack within 60 ms. */
