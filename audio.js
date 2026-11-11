@@ -109,6 +109,161 @@ function synthesizeLose() {
     return normalize(buf);
 }
 
+// ---- Power-up and event effects ----
+
+/**
+ * Builds every power-up and ball-event sound from a few primitives: pitch-swept tones,
+ * filtered noise sweeps and short bursts. Returns { name: Float32Array }.
+ */
+function synthesizeEffects() {
+    const rng = mulberry32(4242);
+    const make = seconds => new Float32Array(Math.floor(SR * seconds));
+    const midi = n => 440 * Math.pow(2, (n - 69) / 12);
+
+    /**
+     * Adds a tone from f0 to f1 Hz (exponential glide) starting at `at` seconds.
+     * wave: 'sine' | 'tri' | 'square' | 'saw'. vib: [rate Hz, depth fraction].
+     */
+    function tone(buf, at, dur, f0, f1, { wave = 'sine', vol = 1, attack = 0.005, decay = null, vib = null } = {}) {
+        const start = Math.floor(at * SR), n = Math.floor(dur * SR);
+        let ph = rng();
+        for (let i = 0; i < n && start + i < buf.length; i++) {
+            const t = i / SR, p = t / dur;
+            let f = f0 * Math.pow(f1 / f0, p);
+            if (vib) f *= 1 + vib[1] * Math.sin(2 * Math.PI * vib[0] * t);
+            ph = (ph + f / SR) % 1;
+            let v;
+            switch (wave) {
+                case 'tri': v = 1 - 4 * Math.abs(ph - 0.5); break;
+                case 'square': v = ph < 0.5 ? 0.7 : -0.7; break;
+                case 'saw': v = (2 * ph - 1) * 0.7; break;
+                default: v = Math.sin(2 * Math.PI * ph);
+            }
+            const env = Math.min(1, t / attack) * (decay ? Math.exp(-t / decay) : Math.min(1, (dur - t) / 0.02));
+            buf[start + i] += v * env * vol;
+        }
+    }
+
+    /** Band-passed noise whose centre sweeps from c0 to c1 Hz; env(p) shapes it over 0..1. */
+    function noise(buf, at, dur, c0, c1, { vol = 1, q = 0.6, env = p => Math.sin(Math.PI * p) } = {}) {
+        const start = Math.floor(at * SR), n = Math.floor(dur * SR);
+        const f = new Svf();
+        for (let i = 0; i < n && start + i < buf.length; i++) {
+            const p = i / n;
+            const c = c0 * Math.pow(c1 / c0, p);
+            buf[start + i] += f.bandpass(rng() * 2 - 1, c, q) * env(p) * vol;
+        }
+    }
+
+    const fx = {};
+
+    // Good power-up: a bright rising major arpeggio with a sparkle on top.
+    fx.powerUp = make(0.55);
+    [72, 76, 79, 84].forEach((n, i) => tone(fx.powerUp, i * 0.055, 0.3, midi(n), midi(n), { wave: 'tri', vol: 0.7, decay: 0.12 }));
+    tone(fx.powerUp, 0.22, 0.3, midi(91), midi(91), { vol: 0.25, decay: 0.08 });
+
+    // Curse: a sour, wobbling downward slide (tritone apart).
+    fx.curse = make(0.8);
+    tone(fx.curse, 0, 0.75, 520, 150, { wave: 'saw', vol: 0.5, vib: [9, 0.05] });
+    tone(fx.curse, 0, 0.75, 368, 106, { wave: 'square', vol: 0.3, vib: [9, 0.05] });
+
+    // Slow-mo: a deep "time-stretch" whoosh falling in pitch.
+    fx.slow = make(0.9);
+    tone(fx.slow, 0, 0.85, 700, 90, { wave: 'tri', vol: 0.6 });
+    noise(fx.slow, 0, 0.85, 3000, 250, { vol: 0.6 });
+
+    // Tiny: a quick upward zip.
+    fx.tiny = make(0.3);
+    tone(fx.tiny, 0, 0.18, 400, 2200, { wave: 'square', vol: 0.4 });
+    tone(fx.tiny, 0.17, 0.12, 2400, 2400, { vol: 0.35, decay: 0.04 });
+
+    // Shield: a shimmering chord that swells in.
+    fx.shield = make(0.9);
+    for (const n of [67, 71, 74, 79])
+        tone(fx.shield, 0, 0.85, midi(n), midi(n), { vol: 0.35, attack: 0.08, vib: [6, 0.006] });
+    noise(fx.shield, 0, 0.6, 5000, 8000, { vol: 0.15 });
+
+    // Autopilot: robotic computer bleeps.
+    fx.auto = make(0.45);
+    [880, 1320, 990, 1760].forEach((f, i) => tone(fx.auto, i * 0.09, 0.07, f, f, { wave: 'square', vol: 0.35 }));
+
+    // Freeze: crystalline high tinkles over a cold hiss.
+    fx.freeze = make(0.8);
+    [96, 91, 98, 93, 100].forEach((n, i) => tone(fx.freeze, i * 0.045, 0.4, midi(n), midi(n), { vol: 0.35, decay: 0.09 }));
+    noise(fx.freeze, 0, 0.7, 6000, 3000, { vol: 0.35, q: 0.3, env: p => Math.exp(-p * 4) });
+
+    // Bomb: a big boom with a crackling tail.
+    fx.boom = make(1.1);
+    tone(fx.boom, 0, 1.0, 120, 30, { vol: 1.0, attack: 0.002, decay: 0.3 });
+    noise(fx.boom, 0, 1.0, 2500, 120, { vol: 2.0, q: 0.9, env: p => Math.exp(-p * 5) });
+
+    // Rush wind-up: a rising warning tone. Launch: a fast whoosh.
+    fx.incoming = make(0.5);
+    tone(fx.incoming, 0, 0.45, 300, 900, { wave: 'saw', vol: 0.4 });
+    fx.launch = make(0.35);
+    noise(fx.launch, 0, 0.33, 600, 4000, { vol: 0.9, env: p => Math.min(1, p * 8) * Math.exp(-p * 4) });
+
+    // Wobble: a bendy warble.
+    fx.wobble = make(0.6);
+    tone(fx.wobble, 0, 0.55, 330, 330, { wave: 'tri', vol: 0.55, vib: [11, 0.18] });
+
+    // Giant: a swelling low rumble that climbs.
+    fx.giant = make(0.9);
+    tone(fx.giant, 0, 0.85, 55, 140, { wave: 'saw', vol: 0.55, attack: 0.3 });
+    tone(fx.giant, 0, 0.85, 110, 280, { vol: 0.4, attack: 0.3 });
+
+    // Grow / shrink: matching up and down slides.
+    fx.grow = make(0.45);
+    tone(fx.grow, 0, 0.4, 180, 520, { wave: 'tri', vol: 0.6 });
+    fx.shrink = make(0.45);
+    tone(fx.shrink, 0, 0.4, 900, 260, { wave: 'tri', vol: 0.6 });
+
+    // Hunted: a two-tone alarm.
+    fx.hunted = make(0.6);
+    [0, 1, 2, 3].forEach(i => tone(fx.hunted, i * 0.14, 0.12, i % 2 ? 620 : 830, i % 2 ? 620 : 830, { wave: 'square', vol: 0.35 }));
+
+    // Speed up: a revving engine-like rise.
+    fx.speedUp = make(0.55);
+    tone(fx.speedUp, 0, 0.5, 90, 420, { wave: 'saw', vol: 0.5, vib: [30, 0.08] });
+    noise(fx.speedUp, 0, 0.5, 800, 3000, { vol: 0.3 });
+
+    // Merge announced: two notes slide toward each other. Merged: a wet "gloop".
+    fx.merge = make(0.5);
+    tone(fx.merge, 0, 0.45, 300, 440, { vol: 0.5 });
+    tone(fx.merge, 0, 0.45, 650, 440, { vol: 0.5 });
+    fx.merged = make(0.3);
+    tone(fx.merged, 0, 0.25, 180, 600, { vol: 0.9, decay: 0.08 });
+
+    // Split announced: a cracking creak. Split: a sharp pop.
+    fx.split = make(0.5);
+    for (let i = 0; i < 6; i++) noise(fx.split, i * 0.07 + rng() * 0.02, 0.03, 2500, 1500, { vol: 1.2, q: 0.4 });
+    fx.splitPop = make(0.3);
+    noise(fx.splitPop, 0, 0.12, 4000, 800, { vol: 1.4, env: p => Math.exp(-p * 6) });
+    tone(fx.splitPop, 0, 0.2, 900, 300, { vol: 0.6, decay: 0.05 });
+
+    // New ball: a friendly two-note chime. Move it: a nagging double beep.
+    fx.newBall = make(0.6);
+    tone(fx.newBall, 0, 0.5, midi(79), midi(79), { vol: 0.5, decay: 0.15 });
+    tone(fx.newBall, 0.1, 0.5, midi(86), midi(86), { vol: 0.5, decay: 0.2 });
+    fx.moveIt = make(0.35);
+    tone(fx.moveIt, 0, 0.1, 1000, 1000, { wave: 'square', vol: 0.35 });
+    tone(fx.moveIt, 0.15, 0.1, 1000, 1000, { wave: 'square', vol: 0.35 });
+
+    // A power-up running out: a soft descending blip.
+    fx.expire = make(0.3);
+    tone(fx.expire, 0, 0.1, midi(79), midi(79), { wave: 'tri', vol: 0.5, decay: 0.05 });
+    tone(fx.expire, 0.08, 0.15, midi(72), midi(72), { wave: 'tri', vol: 0.5, decay: 0.06 });
+
+    for (const k in fx) {
+        const b = fx[k];
+        // Short fade at the very end so nothing clicks off.
+        const fade = Math.floor(0.01 * SR);
+        for (let i = 0; i < fade; i++) b[b.length - 1 - i] *= i / fade;
+        normalize(b);
+    }
+    return fx;
+}
+
 // ---- Music ----
 
 /**
@@ -362,7 +517,7 @@ function runInSlices(gen, budgetMs, done) {
 
 // ---- Playback ----
 
-/** Collision clacks, the game-over sound and the looping soundtrack. */
+/** Collision clacks, power-up and event sounds, the game-over sound and the looping soundtrack. */
 class GameAudio {
     static MUSIC_LEVEL = 0.3;   // soundtrack's base level
     static MAX_PER_FRAME = 6;
@@ -371,6 +526,8 @@ class GameAudio {
         const rng = mulberry32(1234);
         this.clickData = Array.from({ length: 8 }, () => synthesizeClick(rng));
         this.loseData = synthesizeLose();
+        this.effectData = synthesizeEffects();
+        this.effectLastPlayed = {};
         this.musicData = null;
         this.ctx = null;
         this.userVolume = 1;
@@ -400,6 +557,8 @@ class GameAudio {
             this.sfxBus.connect(this.master);
             this.clickBuffers = this.clickData.map(d => this._buffer(d));
             this.loseBuffer = this._buffer(this.loseData);
+            this.effectBuffers = {};
+            for (const k in this.effectData) this.effectBuffers[k] = this._buffer(this.effectData[k]);
             this._onMusicReady();
         }
         if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
@@ -426,7 +585,7 @@ class GameAudio {
             this.musicBus.gain.setTargetAtTime(GameAudio.MUSIC_LEVEL * this.userVolume, this.ctx.currentTime, 0.01);
     }
 
-    /** Sound-effect volume, 0..1 (collisions and the game-over sound). */
+    /** Sound-effect volume, 0..1 (collisions, power-ups, events and the game-over sound). */
     get effectsVolume() { return this.sfxVolume; }
     set effectsVolume(v) {
         this.sfxVolume = Math.min(1, Math.max(0, v));
@@ -510,6 +669,22 @@ class GameAudio {
 
         this._oneShot(this.clickBuffers[Math.floor(Math.random() * this.clickBuffers.length)], volume, rate);
         this.playedThisFrame++;
+    }
+
+    /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
+    static EFFECT_LEVELS = {
+        powerUp: 0.4, curse: 0.35, slow: 0.4, tiny: 0.35, shield: 0.35, auto: 0.3, freeze: 0.4, boom: 0.6,
+        incoming: 0.25, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.3, speedUp: 0.3,
+        merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.25, expire: 0.25,
+    };
+
+    /** Plays a named power-up or event sound. The same sound won't stack within 60 ms. */
+    playEffect(name) {
+        if (!this.ctx || this.ctx.state !== 'running' || !this.effectBuffers[name]) return;
+        const now = this.ctx.currentTime;
+        if (now - (this.effectLastPlayed[name] ?? -1) < 0.06) return;
+        this.effectLastPlayed[name] = now;
+        this._oneShot(this.effectBuffers[name], GameAudio.EFFECT_LEVELS[name] ?? 0.3, 1);
     }
 
     playLose() {

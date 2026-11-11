@@ -429,6 +429,7 @@
                 if (b) { // starting balls don't get this, only ones added mid-run
                     b.newTime = NEW_BALL_HIGHLIGHT;
                     showBanner('NEW BALL!', NEW_BALL_GLOW);
+                    sound.playEffect('newBall');
                 }
             }
 
@@ -590,12 +591,18 @@
     }
 
     function updatePowerUps(dt) {
-        slowTime = Math.max(0, slowTime - dt);
-        shrinkTime = Math.max(0, shrinkTime - dt);
-        shieldTime = Math.max(0, shieldTime - dt);
-        bloatTime = Math.max(0, bloatTime - dt);
-        autoTime = Math.max(0, autoTime - dt);
-        sluggishTime = Math.max(0, sluggishTime - dt);
+        // A timed power-up (or curse) that runs out on its own gives a soft blip.
+        const tick = t => {
+            const left = Math.max(0, t - dt);
+            if (t > 0 && left === 0) sound.playEffect('expire');
+            return left;
+        };
+        slowTime = tick(slowTime);
+        shrinkTime = tick(shrinkTime);
+        shieldTime = tick(shieldTime);
+        bloatTime = tick(bloatTime);
+        autoTime = tick(autoTime);
+        sluggishTime = tick(sluggishTime);
         for (const b of balls) b.frozenTime = Math.max(0, b.frozenTime - dt);
 
         // Player radius slides smoothly between normal, shrunk and bloated
@@ -634,7 +641,16 @@
         }
     }
 
+    const COLLECT_SOUNDS = {
+        [PowerUpKind.Slow]: 'slow', [PowerUpKind.Shrink]: 'tiny', [PowerUpKind.Bloat]: 'curse',
+        [PowerUpKind.Sluggish]: 'curse', [PowerUpKind.Shield]: 'shield', [PowerUpKind.Auto]: 'auto',
+        [PowerUpKind.Freeze]: 'freeze', [PowerUpKind.Destroy]: 'boom',
+    };
+
     function collect(kind) {
+        // Good power-ups get a shared pickup chime plus their own sound; curses and the bomb stand alone.
+        if (!isCursed(kind) && kind !== PowerUpKind.Destroy) sound.playEffect('powerUp');
+        if (COLLECT_SOUNDS[kind]) sound.playEffect(COLLECT_SOUNDS[kind]);
         switch (kind) {
             case PowerUpKind.Slow: slowTime = SLOW_DURATION; showBanner('SLOW-MO!', powerUpColor(kind)); break;
             // Tiny and Bloat cancel each other: whichever you grabbed last wins.
@@ -674,7 +690,6 @@
                     balls = balls.filter(b => b !== target);
                     addPop(target.x, target.y, target.r, powerUpColor(kind));
                     addPop(target.x, target.y, target.r + 20, WHITE);
-                    sound.play(700, target.r);
                 }
                 showBanner('BOOM!', powerUpColor(kind));
                 break;
@@ -775,6 +790,7 @@
             x.cruiseSpeed = speedOf(x);
         }
         showBanner('MERGE!', JOIN_LIGHT);
+        sound.playEffect('merge');
         return true;
     }
 
@@ -787,6 +803,7 @@
         b.cruiseSpeed = speedOf(b);
         b.splitParts = survived >= TRIPLE_SPLIT_AFTER && rand() < TRIPLE_SPLIT_CHANCE ? 3 : 2;
         showBanner(b.splitParts === 3 ? 'SPLIT x3!' : 'SPLIT!', SPLIT_LIGHT);
+        sound.playEffect('split');
         return true;
     }
 
@@ -814,6 +831,7 @@
                     balls = balls.filter(b => b !== a && b !== p);
                     balls.push(merged);
                     addPop(merged.x, merged.y, merged.r, JOIN_LIGHT);
+                    sound.playEffect('merged');
                 } else if (a.modeTime <= 0) {
                     // Never met (e.g. blocked by other balls): give up and carry on as normal
                     for (const x of [a, p]) {
@@ -857,6 +875,7 @@
                     }
                 }
                 addPop(a.x, a.y, a.r, SPLIT_LIGHT);
+                sound.playEffect('splitPop');
             }
         }
     }
@@ -929,6 +948,7 @@
                 b.targetR = grow ? Math.min(b.r * RESIZE_GROW, RESIZE_MAX_RADIUS) : Math.max(b.r * RESIZE_SHRINK, RESIZE_MIN_RADIUS);
             }
             showBanner(grow ? 'GROW!' : 'SHRINK!', RESIZE_LIGHT);
+            sound.playEffect(grow ? 'grow' : 'shrink');
         } else if (kind === 2) {
             // Giant: one ball swells up for a moment. Only a ball whose full size won't land on the player.
             const pick = pickRandom(normal()
@@ -941,6 +961,7 @@
             b.baseR = b.r;
             b.bigR = pick.big;
             showBanner('GIANT!', GIANT_LIGHT);
+            sound.playEffect('giant');
         } else if (kind === 4) {
             // Speed up: a few balls temporarily go much faster
             const picks = shuffle(normal()).slice(0, count);
@@ -952,6 +973,7 @@
                 b.trailColor = BOOST_DARK;
             }
             showBanner('SPEED UP!', BOOST_LIGHT);
+            sound.playEffect('speedUp');
         } else if (kind === 3) {
             // Homing: one ball slowly hunts the player
             const b = pickRandom(normal().filter(b => dist(b.x, b.y, mouse.x, mouse.y) > 200));
@@ -961,6 +983,7 @@
             b.cruiseSpeed = speedOf(b);
             b.trailColor = HOMING_LIGHT;
             showBanner('HUNTED!', HOMING_LIGHT);
+            sound.playEffect('hunted');
         } else if (kind === 0) {
             // Rush: only balls far enough away to be dodgeable.
             const picks = shuffle(normal().filter(b => dist(b.x, b.y, mouse.x, mouse.y) > 250)).slice(0, count);
@@ -972,6 +995,7 @@
                 b.trailColor = RUSH_LIGHT;
             }
             showBanner(picks.length === 1 ? 'INCOMING!' : `INCOMING x${picks.length}!`, RUSH_LIGHT);
+            sound.playEffect('incoming');
         } else {
             const picks = shuffle(normal()).slice(0, count);
             if (picks.length === 0) return;
@@ -992,6 +1016,7 @@
                 }
             }
             showBanner('WOBBLE!', CURVE_LIGHT);
+            sound.playEffect('wobble');
         }
     }
 
@@ -1013,8 +1038,10 @@
         const before = idleTime;
         idleTime += dt;
         // The moment the warning ring appears, tell the player to move.
-        if (before < IDLE_LIMIT - IDLE_WARN_TIME && idleTime >= IDLE_LIMIT - IDLE_WARN_TIME)
+        if (before < IDLE_LIMIT - IDLE_WARN_TIME && idleTime >= IDLE_LIMIT - IDLE_WARN_TIME) {
             showBanner('MOVE IT!', RUSH_LIGHT);
+            sound.playEffect('moveIt');
+        }
         if (idleTime < IDLE_LIMIT) return;
 
         const picks = balls
@@ -1029,6 +1056,7 @@
             b.trailColor = RUSH_LIGHT;
         }
         showBanner(picks.length === 1 ? 'INCOMING!' : 'INCOMING! x2', RUSH_LIGHT);
+        sound.playEffect('incoming');
         idleTime = 0; // keep standing still and it happens again
     }
 
@@ -1072,6 +1100,7 @@
                     b.vy = dy / len * dash;
                     b.mode = Mode.Rushing;
                     b.modeTime = 1.1;
+                    sound.playEffect('launch');
                 }
                 break;
 
