@@ -90,9 +90,9 @@
     const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5, Destroy: 6, Sluggish: 7 };
 
     const DIFFICULTIES = [
-        { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, color: rgb(60, 170, 100) },
-        { name: 'Normal', startBalls: 8, speed: 1.0, newBallEvery: 30, eventEvery: 9, maxEventBalls: 2, color: rgb(50, 110, 220) },
-        { name: 'Hard', startBalls: 12, speed: 1.35, newBallEvery: 20, eventEvery: 6, maxEventBalls: 3, color: rgb(200, 60, 60) },
+        { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, idleLimit: 5, color: rgb(60, 170, 100) },
+        { name: 'Normal', startBalls: 8, speed: 1.0, newBallEvery: 30, eventEvery: 9, maxEventBalls: 2, idleLimit: 3, color: rgb(50, 110, 220) },
+        { name: 'Hard', startBalls: 12, speed: 1.35, newBallEvery: 20, eventEvery: 6, maxEventBalls: 3, idleLimit: 2, color: rgb(200, 60, 60) },
     ];
     let difficultyIndex = clamp(store.get('difficulty', 1) | 0, 0, DIFFICULTIES.length - 1);
     const currentDifficulty = () => DIFFICULTIES[difficultyIndex];
@@ -1035,9 +1035,9 @@
 
     // ---- Anti-camping: standing still sends the two nearest balls rushing at you ----
 
-    const IDLE_LIMIT = 3;          // seconds without moving before the punishment
     const IDLE_MOVE_RADIUS = 30;   // moving less than this from where you stopped counts as standing still
     const IDLE_WARN_TIME = 1.2;    // a ring closes in on the player over the last stretch
+    const idleLimit = () => currentDifficulty().idleLimit; // seconds standing still before the rush; shorter on harder settings
     const IDLE_RUSH_MIN_DIST = 150; // too-close balls are skipped so the rush stays dodgeable
     let idleAnchor = { x: W / 2, y: H / 2 };
     let idleTime = 0;
@@ -1051,11 +1051,11 @@
         const before = idleTime;
         idleTime += dt;
         // The moment the warning ring appears, tell the player to move.
-        if (before < IDLE_LIMIT - IDLE_WARN_TIME && idleTime >= IDLE_LIMIT - IDLE_WARN_TIME) {
+        if (before < idleLimit() - IDLE_WARN_TIME && idleTime >= idleLimit() - IDLE_WARN_TIME) {
             showBanner('MOVE IT!', RUSH_LIGHT);
             sound.playEffect('moveIt');
         }
-        if (idleTime < IDLE_LIMIT) return;
+        if (idleTime < idleLimit()) return;
 
         const picks = balls
             .filter(b => b.mode === Mode.Normal && b.frozenTime <= 0 && dist(b.x, b.y, mouse.x, mouse.y) > IDLE_RUSH_MIN_DIST)
@@ -1074,7 +1074,7 @@
     }
 
     function drawIdleWarning(player) {
-        const left = IDLE_LIMIT - idleTime;
+        const left = idleLimit() - idleTime;
         if (left > IDLE_WARN_TIME) return;
         const t = 1 - left / IDLE_WARN_TIME; // 0 → 1 as the rush gets closer
         strokeCircle(player.x, player.y, playerR + 6 + 40 * (1 - t), css(RUSH_LIGHT, 60 + 160 * t), 2, 'dash', survived * 8);
