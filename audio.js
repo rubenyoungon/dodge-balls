@@ -256,6 +256,11 @@ function synthesizeEffects() {
     tone(fx.moveIt, 0, 0.12, midi(76), midi(76), { wave: 'tri', vol: 0.35, decay: 0.05 });
     tone(fx.moveIt, 0.15, 0.12, midi(76), midi(76), { wave: 'tri', vol: 0.35, decay: 0.05 });
 
+    // Blast: a deep thump under a whoosh that sweeps outward.
+    fx.blast = make(0.6);
+    tone(fx.blast, 0, 0.3, 160, 45, { vol: 1.0, attack: 0.002, decay: 0.09 });
+    noise(fx.blast, 0, 0.55, 2500, 300, { vol: 1.0, env: p => Math.min(1, p * 20) * Math.exp(-p * 4) });
+
     // A power-up running out: a soft descending blip.
     fx.expire = make(0.3);
     tone(fx.expire, 0, 0.1, midi(79), midi(79), { wave: 'tri', vol: 0.5, decay: 0.05 });
@@ -733,7 +738,7 @@ class GameAudio {
 
     /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
     static EFFECT_LEVELS = {
-        powerUp: 0.4, curse: 0.35, bloat: 0.18, slow: 0.4, tiny: 0.18, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6,
+        powerUp: 0.4, curse: 0.35, bloat: 0.18, slow: 0.4, tiny: 0.18, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6, blast: 0.4,
         incoming: 0.25, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.3,
         merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.12, expire: 0.25,
     };
