@@ -48,6 +48,29 @@
         },
     };
 
+    const tr = I18N.t; // translated text: tr('key', { placeholder: value })
+
+    // ---- Last updated ----
+    // The date of the newest commit on GitHub, so it moves with every commit without a build step.
+    // It's cached for an hour, since GitHub allows 60 unauthenticated requests an hour; offline it
+    // shows the last date it saw, or nothing.
+    const LATEST_COMMIT_URL = 'https://api.github.com/repos/rubenyoungon/dodge-balls/commits/main';
+    let lastUpdated = null;
+    (function loadLastUpdated() {
+        const cached = store.get('lastUpdated', null);
+        if (cached && cached.date) lastUpdated = new Date(cached.date);
+        if (cached && Date.now() - cached.fetchedAt < 3600 * 1000) return;
+        if (typeof fetch !== 'function') return;
+        fetch(LATEST_COMMIT_URL)
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+            .then(c => {
+                const date = c.commit.committer.date;
+                lastUpdated = new Date(date);
+                store.set('lastUpdated', { date, fetchedAt: Date.now() });
+            })
+            .catch(() => { /* offline or rate-limited: keep whatever we had */ });
+    })();
+
     // ---- Game data ----
 
     const Mode = {
@@ -92,9 +115,9 @@
     const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5, Destroy: 6, Sluggish: 7, Blast: 8 };
 
     const DIFFICULTIES = [
-        { name: 'Easy', startBalls: 6, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, idleLimit: 5, color: rgb(60, 170, 100) },
-        { name: 'Normal', startBalls: 8, speed: 1.0, newBallEvery: 30, eventEvery: 9, maxEventBalls: 2, idleLimit: 3, color: rgb(50, 110, 220) },
-        { name: 'Hard', startBalls: 12, speed: 1.35, newBallEvery: 20, eventEvery: 6, maxEventBalls: 3, idleLimit: 2, color: rgb(200, 60, 60) },
+        { name: 'easy', startBalls: 6, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, idleLimit: 5, color: rgb(60, 170, 100) },
+        { name: 'normal', startBalls: 8, speed: 1.0, newBallEvery: 30, eventEvery: 9, maxEventBalls: 2, idleLimit: 3, color: rgb(50, 110, 220) },
+        { name: 'hard', startBalls: 12, speed: 1.35, newBallEvery: 20, eventEvery: 6, maxEventBalls: 3, idleLimit: 2, color: rgb(200, 60, 60) },
     ];
     let difficultyIndex = clamp(store.get('difficulty', 1) | 0, 0, DIFFICULTIES.length - 1);
     const currentDifficulty = () => DIFFICULTIES[difficultyIndex];
@@ -135,8 +158,8 @@
 
     // Volume sliders in the pause menu: [label, storage key, sound property]
     const SLIDERS = [
-        ['Music volume', 'volume', 'musicVolume'],
-        ['Effects volume', 'effectsVolume', 'effectsVolume'],
+        ['musicVolume', 'volume', 'musicVolume'],
+        ['effectsVolume', 'effectsVolume', 'effectsVolume'],
     ];
     for (const [, key, prop] of SLIDERS) sound[prop] = clamp(Number(store.get(key, 1)), 0, 1);
 
@@ -154,7 +177,7 @@
         if (!pendingStart && !pendingResume) return;
         pendingStart = pendingResume = false;
         // Browsers refuse a new lock for about a second after Esc releases one.
-        lockMessage = 'Couldn’t capture the mouse — click again';
+        lockMessage = tr('lockFailed');
         lockMessageTime = 2.5;
     }
 
@@ -438,7 +461,7 @@
                 const b = spawnBall();
                 if (b) { // starting balls don't get this, only ones added mid-run
                     b.newTime = NEW_BALL_HIGHLIGHT;
-                    showBanner('NEW BALL!', NEW_BALL_GLOW);
+                    showBanner(tr('newBall'), NEW_BALL_GLOW);
                     sound.playEffect('newBall');
                 }
             }
@@ -677,17 +700,17 @@
         if (!isCursed(kind) && kind !== PowerUpKind.Destroy) sound.playEffect('powerUp');
         if (COLLECT_SOUNDS[kind]) sound.playEffect(COLLECT_SOUNDS[kind]);
         switch (kind) {
-            case PowerUpKind.Slow: slowTime = SLOW_DURATION; showBanner('SLOW-MO!', powerUpColor(kind)); break;
+            case PowerUpKind.Slow: slowTime = SLOW_DURATION; showBanner(tr('slowMo'), powerUpColor(kind)); break;
             // Tiny and Bloat cancel each other: whichever you grabbed last wins.
-            case PowerUpKind.Shrink: shrinkTime = SHRINK_DURATION; bloatTime = 0; showBanner('TINY!', powerUpColor(kind)); break;
+            case PowerUpKind.Shrink: shrinkTime = SHRINK_DURATION; bloatTime = 0; showBanner(tr('tiny'), powerUpColor(kind)); break;
             // The two curses don't stack either (big and slow at once is nearly certain death).
-            case PowerUpKind.Bloat: bloatTime = BLOAT_DURATION; shrinkTime = sluggishTime = 0; showBanner('CURSED! BLOATED!', powerUpColor(kind)); break;
-            case PowerUpKind.Sluggish: sluggishTime = SLUGGISH_DURATION; bloatTime = 0; showBanner('CURSED! SLUGGISH!', powerUpColor(kind)); break;
-            case PowerUpKind.Shield: shieldTime = SHIELD_DURATION; showBanner('INVULNERABLE!', powerUpColor(kind)); break;
+            case PowerUpKind.Bloat: bloatTime = BLOAT_DURATION; shrinkTime = sluggishTime = 0; showBanner(tr('bloated'), powerUpColor(kind)); break;
+            case PowerUpKind.Sluggish: sluggishTime = SLUGGISH_DURATION; bloatTime = 0; showBanner(tr('sluggish'), powerUpColor(kind)); break;
+            case PowerUpKind.Shield: shieldTime = SHIELD_DURATION; showBanner(tr('invulnerable'), powerUpColor(kind)); break;
             case PowerUpKind.Auto:
                 if (autoTime <= 0) autoVel = { x: 0, y: 0 };
                 autoTime = AUTO_DURATION;
-                showBanner('AUTOPILOT!', powerUpColor(kind));
+                showBanner(tr('autopilot'), powerUpColor(kind));
                 break;
             case PowerUpKind.Freeze: {
                 // The nearest ball that isn't already frozen
@@ -699,7 +722,7 @@
                     target.frozenTime = FREEZE_DURATION;
                     addPop(target.x, target.y, target.r, powerUpColor(kind));
                 }
-                showBanner('FROZEN!', powerUpColor(kind));
+                showBanner(tr('frozen'), powerUpColor(kind));
                 break;
             }
             case PowerUpKind.Destroy: {
@@ -719,7 +742,7 @@
                     addPop(target.x, target.y, target.r, powerUpColor(kind));
                     addPop(target.x, target.y, target.r + 20, WHITE);
                 }
-                showBanner('BOOM!', powerUpColor(kind));
+                showBanner(tr('boom'), powerUpColor(kind));
                 break;
             }
             case PowerUpKind.Blast: {
@@ -740,7 +763,7 @@
                 }
                 addPop(mouse.x, mouse.y, playerR, powerUpColor(kind), BLAST_RADIUS);
                 addPop(mouse.x, mouse.y, playerR, WHITE, BLAST_RADIUS * 0.6);
-                showBanner('BLAST!', powerUpColor(kind));
+                showBanner(tr('blast'), powerUpColor(kind));
                 break;
             }
         }
@@ -848,7 +871,7 @@
             x.modeTime = JOIN_TIMEOUT;
             x.cruiseSpeed = speedOf(x);
         }
-        showBanner('MERGE!', JOIN_LIGHT);
+        showBanner(tr('merge'), JOIN_LIGHT);
         sound.playEffect('merge');
         return true;
     }
@@ -861,7 +884,7 @@
         b.modeTime = SPLIT_WARN_TIME;
         b.cruiseSpeed = speedOf(b);
         b.splitParts = survived >= TRIPLE_SPLIT_AFTER && rand() < TRIPLE_SPLIT_CHANCE ? 3 : 2;
-        showBanner(b.splitParts === 3 ? 'SPLIT x3!' : 'SPLIT!', SPLIT_LIGHT);
+        showBanner(b.splitParts === 3 ? tr('split3') : tr('split'), SPLIT_LIGHT);
         sound.playEffect('split');
         return true;
     }
@@ -1006,7 +1029,7 @@
                 b.baseR = b.r;
                 b.targetR = grow ? Math.min(b.r * RESIZE_GROW, RESIZE_MAX_RADIUS) : Math.max(b.r * RESIZE_SHRINK, RESIZE_MIN_RADIUS);
             }
-            showBanner(grow ? 'GROW!' : 'SHRINK!', RESIZE_LIGHT);
+            showBanner(grow ? tr('grow') : tr('shrink'), RESIZE_LIGHT);
             sound.playEffect(grow ? 'grow' : 'shrink');
         } else if (kind === 2) {
             // Giant: one ball swells up for a moment. Only a ball whose full size won't land on the player.
@@ -1019,7 +1042,7 @@
             b.modeTime = GROW_WARN_TIME;
             b.baseR = b.r;
             b.bigR = pick.big;
-            showBanner('GIANT!', GIANT_LIGHT);
+            showBanner(tr('giant'), GIANT_LIGHT);
             sound.playEffect('giant');
         } else if (kind === 4) {
             // Speed up: a few balls temporarily go much faster
@@ -1031,7 +1054,7 @@
                 b.cruiseSpeed = speedOf(b);
                 b.trailColor = BOOST_DARK;
             }
-            showBanner('SPEED UP!', BOOST_LIGHT);
+            showBanner(tr('speedUp'), BOOST_LIGHT);
             sound.playEffect('speedUp');
         } else if (kind === 3) {
             // Homing: one ball slowly hunts the player
@@ -1041,7 +1064,7 @@
             b.modeTime = HOMING_DURATION;
             b.cruiseSpeed = speedOf(b);
             b.trailColor = HOMING_LIGHT;
-            showBanner('HUNTED!', HOMING_LIGHT);
+            showBanner(tr('hunted'), HOMING_LIGHT);
             sound.playEffect('hunted');
         } else if (kind === 0) {
             // Rush: only balls far enough away to be dodgeable.
@@ -1053,7 +1076,7 @@
                 b.cruiseSpeed = speedOf(b);
                 b.trailColor = RUSH_LIGHT;
             }
-            showBanner(picks.length === 1 ? 'INCOMING!' : `INCOMING x${picks.length}!`, RUSH_LIGHT);
+            showBanner(picks.length === 1 ? tr('incoming') : tr('incomingN', { n: picks.length }), RUSH_LIGHT);
             sound.playEffect('incoming');
         } else {
             const picks = shuffle(normal()).slice(0, count);
@@ -1074,7 +1097,7 @@
                     b.wobbleFreq = 4 + rand() * 3;
                 }
             }
-            showBanner('WOBBLE!', CURVE_LIGHT);
+            showBanner(tr('wobble'), CURVE_LIGHT);
             sound.playEffect('wobble');
         }
     }
@@ -1098,7 +1121,7 @@
         idleTime += dt;
         // The moment the warning ring appears, tell the player to move.
         if (before < idleLimit() - IDLE_WARN_TIME && idleTime >= idleLimit() - IDLE_WARN_TIME) {
-            showBanner('MOVE IT!', RUSH_LIGHT);
+            showBanner(tr('moveIt'), RUSH_LIGHT);
             sound.playEffect('moveIt');
         }
         if (idleTime < idleLimit()) return;
@@ -1114,7 +1137,7 @@
             b.cruiseSpeed = speedOf(b);
             b.trailColor = RUSH_LIGHT;
         }
-        showBanner(picks.length === 1 ? 'INCOMING!' : 'INCOMING! x2', RUSH_LIGHT);
+        showBanner(picks.length === 1 ? tr('incoming') : tr('incomingIdle2'), RUSH_LIGHT);
         sound.playEffect('incoming');
         idleTime = 0; // keep standing still and it happens again
     }
@@ -1501,20 +1524,20 @@
         const bar = (label, t, total, kind) => {
             if (t <= 0) return;
             const c = powerUpColor(kind);
-            const w = 140, h = 18;
+            const w = 160, h = 18; // wide enough for the longer Dutch labels
             ctx.fillStyle = css(rgb(0, 0, 0), 120);
             ctx.fillRect(x, y, w, h);
             ctx.fillStyle = css(c, 170);
             ctx.fillRect(x, y, w * (t / total), h);
-            drawText(`${label} ${t.toFixed(1)}s`, x + 4, y + h / 2 + 1, 10, true, 'white', 'left', 'middle');
+            drawText(`${label} ${I18N.num(t)}s`, x + 4, y + h / 2 + 1, 10, true, 'white', 'left', 'middle');
             y += h + 4;
         };
-        bar('Slow-mo', slowTime, SLOW_DURATION, PowerUpKind.Slow);
-        bar('Tiny', shrinkTime, SHRINK_DURATION, PowerUpKind.Shrink);
-        bar('Shield', shieldTime, SHIELD_DURATION, PowerUpKind.Shield);
-        bar('Cursed: big', bloatTime, BLOAT_DURATION, PowerUpKind.Bloat);
-        bar('Cursed: slow', sluggishTime, SLUGGISH_DURATION, PowerUpKind.Sluggish);
-        bar('Autopilot', autoTime, AUTO_DURATION, PowerUpKind.Auto);
+        bar(tr('barSlowMo'), slowTime, SLOW_DURATION, PowerUpKind.Slow);
+        bar(tr('barTiny'), shrinkTime, SHRINK_DURATION, PowerUpKind.Shrink);
+        bar(tr('barShield'), shieldTime, SHIELD_DURATION, PowerUpKind.Shield);
+        bar(tr('barBloated'), bloatTime, BLOAT_DURATION, PowerUpKind.Bloat);
+        bar(tr('barSluggish'), sluggishTime, SLUGGISH_DURATION, PowerUpKind.Sluggish);
+        bar(tr('barAutopilot'), autoTime, AUTO_DURATION, PowerUpKind.Auto);
     }
 
     function drawPops() {
@@ -1678,7 +1701,7 @@
     }
 
     function drawDifficultySelector() {
-        drawText(touchMode ? 'Difficulty' : 'Difficulty  (← / → or 1-3)', W / 2, difficultyButton(0).y - 22, 12, false,
+        drawText(touchMode ? tr('difficulty') : tr('difficultyKeys'), W / 2, difficultyButton(0).y - 22, 12, false,
             css(LIGHT_GRAY), 'center', 'middle');
 
         for (let i = 0; i < DIFFICULTIES.length; i++) {
@@ -1697,13 +1720,18 @@
                 setPen(selected ? 'white' : css(WHITE, 160), 2);
                 ctx.stroke();
             }
-            drawText(d.name, r.x + r.w / 2, r.y + r.h / 2, 13, true, selected || hover ? 'white' : css(GRAY), 'center', 'middle');
+            drawText(tr(d.name), r.x + r.w / 2, r.y + r.h / 2, 13, true, selected || hover ? 'white' : css(GRAY), 'center', 'middle');
         }
 
-        const hint = !touchMode ? 'The mouse is captured while you play — press Esc to pause.'
-            : window.innerHeight > window.innerWidth ? 'Drag anywhere to move the red ball. Turn your phone sideways for a bigger view.'
-                : 'Drag anywhere to move the red ball — it moves with your finger, not under it.';
+        const hint = !touchMode ? tr('hintMouse')
+            : window.innerHeight > window.innerWidth ? tr('hintPortrait')
+                : tr('hintTouch');
         drawText(hint, W / 2, H - 28, touchMode ? 13 : 10, false, css(rgb(200, 210, 230), touchMode ? 190 : 140), 'center', 'middle');
+    }
+
+    function drawLastUpdated(x, y, align) {
+        if (!lastUpdated || isNaN(lastUpdated)) return;
+        drawText(tr('lastUpdated', { date: I18N.date(lastUpdated) }), x, y, 9, false, css(rgb(200, 210, 230), 120), align, 'middle');
     }
 
     function drawPauseButton() {
@@ -1738,7 +1766,7 @@
         setPen(css(rgb(140, 170, 255), 90), 1.5);
         ctx.stroke();
 
-        drawText('PAUSED', m.x + m.w / 2, m.y + 42, 26, true, 'white', 'center', 'middle');
+        drawText(tr('paused'), m.x + m.w / 2, m.y + 42, 26, true, 'white', 'center', 'middle');
 
         // Volume sliders
         SLIDERS.forEach(([label, , prop], i) => {
@@ -1746,7 +1774,7 @@
             const vol = sound[prop];
             // With a keyboard, the label of the slider the arrow keys adjust is highlighted.
             const focused = !touchMode && i === focusedSlider;
-            drawText(label, s.x, s.y - 30, 12, focused, focused ? 'white' : css(LIGHT_GRAY));
+            drawText(tr(label), s.x, s.y - 30, 12, focused, focused ? 'white' : css(LIGHT_GRAY));
             drawText(`${Math.round(vol * 100)}%`, s.x + s.w, s.y - 30, 12, false, 'white', 'right');
             roundRectPath(s, 4);
             ctx.fillStyle = css(rgb(60, 70, 90));
@@ -1760,11 +1788,12 @@
             drawBall(s.x + filled, s.y + s.h / 2, 11, WHITE, rgb(150, 170, 210));
         });
 
-        drawButton(resumeButton(), 'Resume', rgb(50, 110, 220));
-        drawButton(quitButton(), 'Quit', rgb(200, 60, 60));
+        drawButton(resumeButton(), tr('resume'), rgb(50, 110, 220));
+        drawButton(quitButton(), tr('quit'), rgb(200, 60, 60));
 
-        const hint = touchMode ? '' : playing() ? 'Click Resume to recapture the mouse' : 'Esc to close';
+        const hint = touchMode ? '' : playing() ? tr('resumeHint') : tr('escToClose');
         drawText(hint, m.x + m.w / 2, m.y + m.h + 16, 9, false, css(rgb(200, 210, 230), 140), 'center', 'middle');
+        drawLastUpdated(m.x + m.w / 2, m.y + m.h - 13, 'center');
     }
 
     function drawLockMessage() {
@@ -1859,20 +1888,19 @@
         if (playing()) { drawPlayerEffects(player); drawIdleWarning(player); drawActiveEffects(); }
 
         const d = currentDifficulty();
-        const hud = `Time: ${survived.toFixed(1)}s   Balls: ${balls.length}   Best (${d.name}): ${best[difficultyIndex].toFixed(1)}s`;
+        const hud = tr('hud', { time: I18N.num(survived), balls: balls.length, difficulty: tr(d.name), best: I18N.num(best[difficultyIndex]) });
         drawText(hud, 12, 10, 14, true, 'white');
 
         drawBanners();
 
-        const startHint = touchMode ? 'Tap to start' : 'Click or press Space to start';
         if (waitingToStart)
-            drawCenterText('DODGE BALLS', `Keep the red ball away from the blue ones.\n${startHint}.`);
+            drawCenterText(tr('title'), `${tr('tagline')}\n${tr(touchMode ? 'startTap' : 'startClick')}`);
         else if (gameOver)
-            drawCenterText('YOU LOSE', `You survived ${survived.toFixed(1)} seconds.\n${touchMode ? 'Tap' : 'Click or press Space'} to play again.`);
+            drawCenterText(tr('youLose'), `${tr('survived', { time: I18N.num(survived) })}\n${tr(touchMode ? 'againTap' : 'againClick')}`);
 
         drawPauseButton();
 
-        if ((waitingToStart || gameOver) && !paused) drawDifficultySelector();
+        if ((waitingToStart || gameOver) && !paused) { drawDifficultySelector(); drawLastUpdated(W - 12, H - 10, 'right'); }
         if (paused) drawPauseMenu();
         drawLockMessage();
     }
