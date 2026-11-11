@@ -14,7 +14,7 @@ const STRINGS = {
         invulnerable: 'INVULNERABLE!', autopilot: 'AUTOPILOT!', frozen: 'FROZEN!', boom: 'BOOM!', blast: 'BLAST!',
         merge: 'MERGE!', split: 'SPLIT!', split3: 'SPLIT x3!', grow: 'GROW!', shrink: 'SHRINK!', giant: 'GIANT!',
         speedUp: 'SPEED UP!', hunted: 'HUNTED!', incoming: 'INCOMING!', incomingN: 'INCOMING x{n}!', incomingIdle2: 'INCOMING! x2',
-        wobble: 'WOBBLE!', moveIt: 'MOVE IT!',
+        wobble: 'WOBBLE!', moveIt: 'MOVE IT!', gravityWell: 'GRAVITY WELL!',
 
         // Timers for active power-ups
         barSlowMo: 'Slow-mo', barTiny: 'Tiny', barShield: 'Shield', barBloated: 'Cursed: big', barSluggish: 'Cursed: slow',
@@ -35,20 +35,20 @@ const STRINGS = {
         lastUpdated: 'Last updated: {date}',
     },
     nl: {
-        easy: 'Makkelijk', normal: 'Normaal', hard: 'Moeilijk',
+        easy: 'Makkelijk', normal: 'Gemiddeld', hard: 'Moeilijk',
         musicVolume: 'Muziekvolume', effectsVolume: 'Effectenvolume',
         lockFailed: 'Kon de muis niet vastzetten — klik nog een keer',
 
         newBall: 'NIEUWE BAL!', slowMo: 'SLOW-MO!', tiny: 'MINI!', bloated: 'VERVLOEKT! OPGEBLAZEN!', sluggish: 'VERVLOEKT! TRAAG!',
         invulnerable: 'ONKWETSBAAR!', autopilot: 'AUTOPILOOT!', frozen: 'BEVROREN!', boom: 'BOEM!', blast: 'SCHOKGOLF!',
-        merge: 'SAMENSMELTEN!', split: 'SPLITSEN!', split3: 'SPLITSEN x3!', grow: 'GROEIEN!', shrink: 'KRIMPEN!', giant: 'REUS!',
-        speedUp: 'SNELLER!', hunted: 'OPGEJAAGD!', incoming: 'AANVAL!', incomingN: 'AANVAL x{n}!', incomingIdle2: 'AANVAL! x2',
-        wobble: 'WIEBELEN!', moveIt: 'BEWEGEN!',
+        merge: 'SAMENSMELTEN!', split: 'SPLITSING!', split3: 'SPLITSING x3!', grow: 'GROEIEN!', shrink: 'KRIMPEN!', giant: 'REUS!',
+        speedUp: 'VERSNELLING!', hunted: 'OPGEJAAGD!', incoming: 'PAS OP!', incomingN: 'PAS OP! x{n}', incomingIdle2: 'PAS OP! x2',
+        wobble: 'WIEBELEN!', moveIt: 'BEWEEG!', gravityWell: 'ZWAARTEKRACHT!',
 
         barSlowMo: 'Slow-mo', barTiny: 'Mini', barShield: 'Schild', barBloated: 'Vervloekt: groot', barSluggish: 'Vervloekt: traag',
         barAutopilot: 'Autopiloot',
 
-        difficulty: 'Moeilijkheid', difficultyKeys: 'Moeilijkheid  (← / → of 1-3)',
+        difficulty: 'Moeilijkheidsgraad', difficultyKeys: 'Moeilijkheidsgraad  (← / → of 1-3)',
         hintMouse: 'De muis wordt vastgezet tijdens het spelen — druk op Esc om te pauzeren.',
         hintPortrait: 'Sleep ergens om de rode bal te bewegen. Draai je telefoon voor een groter beeld.',
         hintTouch: 'Sleep ergens om de rode bal te bewegen — hij beweegt mee met je vinger, niet eronder.',

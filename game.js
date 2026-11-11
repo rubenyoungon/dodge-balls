@@ -92,7 +92,8 @@
             frozenTime: 0,   // seconds left frozen in place (freeze power-up); its event is paused meanwhile
             blastTime: 0,    // seconds left easing back to blastSpeed after the blast power-up flung it away
             blastSpeed: 0,   // the speed it had before the blast
-            newTime: 0,      // seconds left of the "just arrived" highlight
+            wellSpeed: 0,    // the speed it had before a gravity well started pulling it (0: not pulled)
+            newTime: 0,     // seconds left of the "just arrived" highlight
             trail: [],
             trailColor: WHITE,
         }, props);
@@ -397,6 +398,7 @@
         eventTimer = 5; // short grace period before the first event
         banners.length = 0;
         pops.length = 0;
+        well = null;
         powerUps.length = 0;
         powerUpTimer = 8;
         slowTime = shrinkTime = shieldTime = bloatTime = autoTime = sluggishTime = 0;
@@ -442,6 +444,7 @@
             const steps = 4;
             const ballDt = dt * ballTimeScale();
             for (let s = 0; s < steps; s++) step(ballDt / steps);
+            updateWell(ballDt); // runs on ball time, so slow-mo slows the well down too
 
             updateTrails();
             updatePowerUps(dt);
@@ -494,12 +497,14 @@
             b.mode = Mode.Normal;
             b.partner = null;
             b.frozenTime = 0;
+            b.wellSpeed = 0;
             b.newTime = 0;
             b.trail.length = 0;
             b.vx *= 0.3;
             b.vy = -150 - rand() * 350;
         }
         powerUps.length = 0;
+        well = null;
         slowTime = shieldTime = autoTime = sluggishTime = 0;
         playerFall = { x: mouse.x, y: mouse.y, vx: 0, vy: -450 };
     }
@@ -520,6 +525,7 @@
             if (b.frozenTime > 0) continue; // stays put; keeps its velocity for when it thaws
             updateBehavior(b, dt);
             updateBlast(b, dt);
+            pullTowardWell(b, dt);
             b.x += b.vx * dt;
             b.y += b.vy * dt;
 
@@ -800,7 +806,7 @@
             const sx = b.x + b.vx * b.modeTime, sy = b.y + b.vy * b.modeTime;
             const target = playerAt(b.modeTime);
             const len = Math.max(1, dist(sx, sy, target.x, target.y));
-            const dash = rushDashSpeed(b) * (t - b.modeTime);
+            const dash = rushDashSpeed() * (t - b.modeTime);
             x = sx + (target.x - sx) / len * dash;
             y = sy + (target.y - sy) / len * dash;
         }
@@ -972,6 +978,74 @@
         for (let i = pops.length - 1; i >= 0; i--) if (pops[i].age >= POP_DURATION) pops.splice(i, 1);
     }
 
+    // ---- Rare event: gravity well ----
+    // A dark point opens somewhere away from the player, then pulls every free ball toward it for a second.
+    // Afterwards the balls ease back to the speed they had before (the same easing as the blast power-up).
+
+    const WELL_CHANCE = 0.1;          // share of events that become a gravity well
+    const WELL_WARN_TIME = 0.9;       // the well forms before it starts pulling
+    const WELL_PULL_TIME = 1;
+    const WELL_FADE_TIME = 0.35;      // the well closes after the pull
+    const WELL_PULL = 700;            // pull strength (px/s², times the difficulty speed)
+    const WELL_MAX_SPEED = 480;       // pulled balls never go faster than this (times the difficulty speed)
+    const WELL_MIN_PLAYER_DIST = 380; // opens at least this far from the player
+    const WELL_MARGIN = 110;          // ...and this far from the edges
+    const WELL_LIGHT = rgb(150, 110, 255), WELL_DARK = rgb(18, 8, 45);
+    let well = null; // { x, y, time }: time counts up from the moment it appears
+
+    const wellPulling = () => well && well.time >= WELL_WARN_TIME && well.time < WELL_WARN_TIME + WELL_PULL_TIME;
+
+    function tryGravityWell() {
+        if (well) return false;
+        for (let attempt = 0; attempt < 30; attempt++) {
+            const x = WELL_MARGIN + rand() * (W - 2 * WELL_MARGIN);
+            const y = WELL_MARGIN + rand() * (H - 2 * WELL_MARGIN);
+            if (dist(x, y, mouse.x, mouse.y) < WELL_MIN_PLAYER_DIST) continue;
+            well = { x, y, time: 0 };
+            showBanner(tr('gravityWell'), WELL_LIGHT);
+            sound.playEffect('gravityWell');
+            return true;
+        }
+        return false; // the arena is too small to keep it away from the player
+    }
+
+    function updateWell(dt) {
+        if (!well) return;
+        const wasPulling = wellPulling();
+        well.time += dt;
+        if (wasPulling && !wellPulling()) {
+            // Pull over: each pulled ball eases back to its old speed
+            for (const b of balls) {
+                if (b.wellSpeed <= 0) continue;
+                if (b.mode === Mode.Normal) {
+                    b.blastSpeed = b.wellSpeed;
+                    b.blastTime = BLAST_EASE_TIME;
+                }
+                b.wellSpeed = 0;
+            }
+            addPop(well.x, well.y, 6, WELL_LIGHT, 90);
+        }
+        if (well.time >= WELL_WARN_TIME + WELL_PULL_TIME + WELL_FADE_TIME) well = null;
+    }
+
+    // Balls in an event that steers them (a rush, homing, a merge...) are left alone.
+    function pullTowardWell(b, dt) {
+        if (!wellPulling() || b.mode !== Mode.Normal) return;
+        if (b.wellSpeed <= 0) {
+            // A ball still settling after a blast remembers its speed from before the blast
+            b.wellSpeed = Math.max(1, b.blastTime > 0 ? b.blastSpeed : speedOf(b));
+            b.blastTime = 0;
+        }
+        const dx = well.x - b.x, dy = well.y - b.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 1) return;
+        const k = currentDifficulty().speed;
+        b.vx += dx / d * WELL_PULL * k * dt;
+        b.vy += dy / d * WELL_PULL * k * dt;
+        const max = Math.max(WELL_MAX_SPEED * k, b.wellSpeed);
+        if (speedOf(b) > max) setSpeed(b, max);
+    }
+
     // ---- Random events ----
 
     const RUSH_LIGHT = rgb(255, 160, 50), RUSH_DARK = rgb(170, 60, 0);
@@ -987,6 +1061,8 @@
     // Speed-up event: balls heat up and go faster for a while
     const BOOST_LIGHT = rgb(255, 250, 190), BOOST_DARK = rgb(210, 130, 20);
     const BOOST_FACTOR = 1.75, BOOST_MIN_DURATION = 3, BOOST_MAX_DURATION = 5;
+    const BOOST_MIN_SPEED = 400; // boosted balls go at least this fast (times the difficulty speed), so slow balls still feel boosted
+    const BOOST_MAX_SPEED = 650; // ...and at most this fast, so already-fast balls don't become undodgeable
 
     // Giant event timing: warning, then grow / hold / shrink
     const GROW_WARN_TIME = 0.9, GROW_UP = 0.35, GROW_HOLD = 10, GROW_DOWN = 0.45;
@@ -1014,6 +1090,9 @@
         eventTimer = d.eventEvery * (0.7 + rand() * 0.6);
         const count = randInt(1, d.maxEventBalls + 1);
         const kind = randInt(0, 6);
+
+        // Rarest: a gravity well pulls every ball toward one point
+        if (rand() < WELL_CHANCE && tryGravityWell()) return;
 
         // Rare: two balls join into one, or one ball splits in two
         if (rand() < RARE_EVENT_CHANCE && (randInt(0, 2) === 0 ? tryJoin() || trySplit() : trySplit() || tryJoin()))
@@ -1170,7 +1249,8 @@
         banners.forEach((b, i) => { b.y += (BANNER_TOP + i * BANNER_GAP - b.y) * Math.min(1, dt * 12); });
     }
 
-    const rushDashSpeed = b => Math.max(b.cruiseSpeed * 2, 450 * currentDifficulty().speed);
+    // Every rushing ball dashes at the same speed (per difficulty), however fast it was going before.
+    const rushDashSpeed = () => 450 * currentDifficulty().speed;
 
     function updateBehavior(b, dt) {
         const d = currentDifficulty();
@@ -1183,7 +1263,7 @@
                 if (b.modeTime <= 0) {
                     const dx = mouse.x - b.x, dy = mouse.y - b.y;
                     const len = Math.max(1, Math.hypot(dx, dy));
-                    const dash = rushDashSpeed(b);
+                    const dash = rushDashSpeed();
                     b.vx = dx / len * dash;
                     b.vy = dy / len * dash;
                     b.mode = Mode.Rushing;
@@ -1248,9 +1328,13 @@
 
             case Mode.Boosted: {
                 // Ramp up quickly, hold, then ease back down over the last half second
-                const boost = b.modeTime < 0.5 ? 1 + (BOOST_FACTOR - 1) * (b.modeTime / 0.5) : BOOST_FACTOR;
+                // Capped, but never slower than the ball already was
+                const boosted = clamp(b.cruiseSpeed * BOOST_FACTOR, BOOST_MIN_SPEED * d.speed, BOOST_MAX_SPEED * d.speed);
+                const peak = Math.max(b.cruiseSpeed, boosted);
+                const ramp = b.modeTime < 0.5 ? b.modeTime / 0.5 : 1;
+                const target = b.cruiseSpeed + (peak - b.cruiseSpeed) * ramp;
                 const speed = speedOf(b);
-                setSpeed(b, speed + (b.cruiseSpeed * boost - speed) * Math.min(1, dt * 6));
+                setSpeed(b, speed + (target - speed) * Math.min(1, dt * 6));
                 b.modeTime -= dt;
                 if (b.modeTime <= 0) {
                     setSpeed(b, b.cruiseSpeed);
@@ -1553,6 +1637,31 @@
         bar(tr('barBloated'), bloatTime, BLOAT_DURATION, PowerUpKind.Bloat);
         bar(tr('barSluggish'), sluggishTime, SLUGGISH_DURATION, PowerUpKind.Sluggish);
         bar(tr('barAutopilot'), autoTime, AUTO_DURATION, PowerUpKind.Auto);
+    }
+
+    // Gravity well: a dark core with rings sinking into it. It forms during the warning,
+    // churns while it pulls, then shrinks away.
+    function drawWell() {
+        if (!well) return;
+        const t = well.time;
+        const pullEnd = WELL_WARN_TIME + WELL_PULL_TIME;
+        const pulling = wellPulling();
+        const form = Math.min(1, t / WELL_WARN_TIME);                         // 0..1 while forming
+        const fade = t < pullEnd ? 1 : Math.max(0, 1 - (t - pullEnd) / WELL_FADE_TIME); // 1..0 while closing
+        const a = form * fade;
+        const core = 14 * a * (pulling ? 1 + 0.12 * Math.sin(t * 30) : 1);
+
+        // Soft glow, stronger while it pulls
+        fillCircle(well.x, well.y, 70 * a, css(WELL_LIGHT, (pulling ? 55 : 30) * a));
+        // Rings that keep sinking toward the core; faster while pulling
+        const speed = pulling ? 1.8 : 0.8;
+        for (let i = 0; i < 3; i++) {
+            const p = (t * speed + i / 3) % 1;   // 0 at the outside, 1 at the core
+            const r = core + (130 - core) * (1 - p);
+            strokeCircle(well.x, well.y, r, css(WELL_LIGHT, 200 * a * p), 2.5, 'dash', (i % 2 ? 1 : -1) * t * 8);
+        }
+        drawBall(well.x, well.y, core, WELL_DARK, rgb(0, 0, 0));
+        strokeCircle(well.x, well.y, core + 1, css(WELL_LIGHT, 230 * a), 2);
     }
 
     function drawPops() {
@@ -1895,6 +2004,7 @@
         ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
         drawPowerUps();
+        drawWell();
         for (const b of balls) drawSpecialBall(b);
         drawPops();
 
