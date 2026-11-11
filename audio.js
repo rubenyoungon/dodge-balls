@@ -610,11 +610,11 @@ class GameAudio {
         this._startVoice();
     }
 
-    /** Fades the soundtrack out. */
-    stopMusic() {
+    /** Fades the soundtrack out; a tiny fade (e.g. 0.02 s) cuts it off without a click. */
+    stopMusic(fadeSeconds = 1.2) {
         this.musicWanted = false;
         if (this.musicVoice) {
-            this._fadeOut(this.musicVoice, 1.2);
+            this._fadeOut(this.musicVoice, fadeSeconds);
             this.musicVoice = null;
         }
     }

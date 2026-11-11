@@ -448,7 +448,7 @@
                     store.set('best', best);
                 }
                 startFall();
-                sound.stopMusic();
+                sound.stopMusic(0.02); // cut the music the instant you're hit
                 sound.playLose();
                 if (document.pointerLockElement === canvas) document.exitPointerLock();
             }
