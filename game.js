@@ -74,6 +74,11 @@
     }
     const mass = b => b.r * b.r;
     const speedOf = b => Math.hypot(b.vx, b.vy);
+    /** Sets a ball's speed after a bounce; if the bounce stopped it dead, it moves off along (ux, uy). */
+    function keepSpeed(b, speed, ux, uy) {
+        if (speedOf(b) < 0.001) { b.vx = ux; b.vy = uy; }
+        setSpeed(b, speed);
+    }
     function setSpeed(b, speed) {
         const s = speedOf(b);
         if (s < 0.001) return;
@@ -500,8 +505,6 @@
         for (let i = 0; i < balls.length; i++) {
             for (let j = i + 1; j < balls.length; j++) {
                 const a = balls[i], c = balls[j];
-                // A rushing ball ghosts through the others so its telegraphed line stays true.
-                if (a.mode === Mode.Rushing || c.mode === Mode.Rushing) continue;
                 if (a.partner === c) continue; // joining balls are allowed to touch
                 const dx = c.x - a.x, dy = c.y - a.y;
                 const distSq = dx * dx + dy * dy;
@@ -540,11 +543,21 @@
 
                 sound.play(relVel, (a.r + c.r) / 2);
 
+                // A rushing ball bounces off the others instead of passing through them, but both balls
+                // keep their own speed: the rusher stays fast and the ball it hits isn't flung at dash speed.
+                const rush = a.mode === Mode.Rushing || c.mode === Mode.Rushing;
+                const speedA = speedOf(a), speedC = speedOf(c);
+
                 const impulse = 2 * relVel / total;
                 a.vx -= impulse * mc * nx;
                 a.vy -= impulse * mc * ny;
                 c.vx += impulse * ma * nx;
                 c.vy += impulse * ma * ny;
+
+                if (rush) {
+                    keepSpeed(a, speedA, -nx, -ny);
+                    keepSpeed(c, speedC, nx, ny);
+                }
             }
         }
 
