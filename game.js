@@ -660,7 +660,7 @@
     }
 
     const COLLECT_SOUNDS = {
-        [PowerUpKind.Slow]: 'slow', [PowerUpKind.Shrink]: 'tiny', [PowerUpKind.Bloat]: 'curse',
+        [PowerUpKind.Slow]: 'slow', [PowerUpKind.Shrink]: 'tiny', [PowerUpKind.Bloat]: 'bloat',
         [PowerUpKind.Sluggish]: 'curse', [PowerUpKind.Shield]: 'shield', [PowerUpKind.Auto]: 'auto',
         [PowerUpKind.Freeze]: 'freeze', [PowerUpKind.Destroy]: 'boom',
     };

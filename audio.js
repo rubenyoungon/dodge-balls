@@ -166,6 +166,8 @@ function synthesizeEffects() {
     fx.curse = make(0.8);
     tone(fx.curse, 0, 0.75, 520, 150, { wave: 'saw', vol: 0.5, vib: [9, 0.05] });
     tone(fx.curse, 0, 0.75, 368, 106, { wave: 'square', vol: 0.3, vib: [9, 0.05] });
+    // Bloat: the same curse slide, played quieter (see EFFECT_LEVELS).
+    fx.bloat = fx.curse.slice();
 
     // Slow-mo: a deep "time-stretch" whoosh falling in pitch.
     fx.slow = make(0.9);
@@ -731,7 +733,7 @@ class GameAudio {
 
     /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
     static EFFECT_LEVELS = {
-        powerUp: 0.4, curse: 0.35, slow: 0.4, tiny: 0.35, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6,
+        powerUp: 0.4, curse: 0.35, bloat: 0.18, slow: 0.4, tiny: 0.35, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6,
         incoming: 0.25, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.3,
         merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.12, expire: 0.25,
     };
