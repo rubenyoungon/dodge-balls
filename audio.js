@@ -166,6 +166,8 @@ function synthesizeEffects() {
     fx.curse = make(0.8);
     tone(fx.curse, 0, 0.75, 520, 150, { wave: 'saw', vol: 0.5, vib: [9, 0.05] });
     tone(fx.curse, 0, 0.75, 368, 106, { wave: 'square', vol: 0.3, vib: [9, 0.05] });
+    // Bloat: the same curse slide, played quieter (see EFFECT_LEVELS).
+    fx.bloat = fx.curse.slice();
 
     // Slow-mo: a deep "time-stretch" whoosh falling in pitch.
     fx.slow = make(0.9);
@@ -246,13 +248,18 @@ function synthesizeEffects() {
     noise(fx.splitPop, 0, 0.12, 4000, 800, { vol: 1.4, env: p => Math.exp(-p * 6) });
     tone(fx.splitPop, 0, 0.2, 900, 300, { vol: 0.6, decay: 0.05 });
 
-    // New ball: a friendly two-note chime. Move it: a nagging double beep.
+    // New ball: a friendly two-note chime. Move it: a soft double blip, a nudge rather than an alarm.
     fx.newBall = make(0.6);
     tone(fx.newBall, 0, 0.5, midi(79), midi(79), { vol: 0.5, decay: 0.15 });
     tone(fx.newBall, 0.1, 0.5, midi(86), midi(86), { vol: 0.5, decay: 0.2 });
     fx.moveIt = make(0.35);
-    tone(fx.moveIt, 0, 0.1, 1000, 1000, { wave: 'square', vol: 0.35 });
-    tone(fx.moveIt, 0.15, 0.1, 1000, 1000, { wave: 'square', vol: 0.35 });
+    tone(fx.moveIt, 0, 0.12, midi(76), midi(76), { wave: 'tri', vol: 0.35, decay: 0.05 });
+    tone(fx.moveIt, 0.15, 0.12, midi(76), midi(76), { wave: 'tri', vol: 0.35, decay: 0.05 });
+
+    // Blast: a deep thump under a whoosh that sweeps outward.
+    fx.blast = make(0.6);
+    tone(fx.blast, 0, 0.3, 160, 45, { vol: 1.0, attack: 0.002, decay: 0.09 });
+    noise(fx.blast, 0, 0.55, 2500, 300, { vol: 1.0, env: p => Math.min(1, p * 20) * Math.exp(-p * 4) });
 
     // A power-up running out: a soft descending blip.
     fx.expire = make(0.3);
@@ -276,6 +283,10 @@ function synthesizeEffects() {
  * generated from oscillators and noise. 16 bars: bars 1-8 are drums, offbeat bass, arpeggio
  * and pad, ending in a snare-roll build-up with a noise riser; bars 9-16 add a rolling bass,
  * open hats and a lead melody.
+ *
+ * render(true) gives an intense version of the same loop for late in a run: the drop arrangement
+ * all the way through (no break), driving 16th hats, a clap fill every 4 bars and the lead
+ * doubled an octave up. Both versions are the same length, so they can play in sync and crossfade.
  *
  * render() is a generator that yields between steps so it can run in small slices
  * without freezing the page.
@@ -418,7 +429,7 @@ const Music = (() => {
         }
     }
 
-    function* render() {
+    function* render(intense = false) {
         const len = samplePos(TOTAL_STEPS);
         const drums = new Float32Array(len); // not ducked
         const synth = new Float32Array(len); // ducked by the kick (sidechain pump)
@@ -429,18 +440,23 @@ const Music = (() => {
         for (let st = 0; st < TOTAL_STEPS; st++) {
             const inBar = st % 16;
             const chord = Math.floor(st / 32) % 4;
-            const drop = st >= 128;              // second half
-            const buildUp = st >= 112 && st < 128;
+            const drop = intense || st >= 128;   // second half (all of it when intense)
+            const buildUp = !intense && st >= 112 && st < 128;
             const pos = samplePos(st);
 
             // --- Drums ---
-            const kickBreak = st >= 120 && st < 128;
+            const kickBreak = !intense && st >= 120 && st < 128;
             if (inBar % 4 === 0 && !kickBreak) {
                 kick(drums, pos);
                 kicks.push(pos);
             }
             if (inBar === 4 || inBar === 12) clap(drums, pos, rng, 0.55);
             if (buildUp) clap(drums, pos, rng, 0.12 + 0.4 * (st - 112) / 16);
+            // Intense: a rising clap fill closes every 4th bar.
+            if (intense && st % 64 >= 56 && inBar % 2 === 0) clap(drums, pos, rng, 0.15 + 0.25 * (st % 64 - 56) / 8);
+
+            // Intense: extra 32nd-note hat ticks keep it driving.
+            if (intense && inBar % 2 === 1) hat(drums, pos + samplePos(0.5), rng, 0.015, 0.08);
 
             if (drop && inBar % 4 === 2) hat(drums, pos, rng, 0.17, 0.28);
             else hat(drums, pos, rng, 0.025, inBar % 4 === 2 ? 0.22 : 0.1);
@@ -457,7 +473,7 @@ const Music = (() => {
             const third = IS_MINOR[chord] ? 3 : 4;
             const pattern = [0, 7, 12, third + 12, 12, 7, third, 7];
             const arpNote = ROOTS[chord] + 24 + pattern[inBar % 8];
-            const arpVol = drop ? 0.15 : 0.12 + 0.06 * st / 128;
+            const arpVol = intense ? 0.17 : drop ? 0.15 : 0.12 + 0.06 * st / 128;
             pluck(synth, send, pos, arpNote, arpVol);
 
             // --- Pad: one chord every 2 bars ---
@@ -470,12 +486,16 @@ const Music = (() => {
             // --- Lead melody in the second half ---
             if (drop)
                 for (const [step, note, l] of MELODY[chord])
-                    if (step === st % 32) lead(synth, send, pos, samplePos(l), note, 0.11);
+                    if (step === st % 32) {
+                        lead(synth, send, pos, samplePos(l), note, 0.11);
+                        // Intense: the second half doubles the lead an octave up.
+                        if (intense && st >= 128) lead(synth, send, pos, samplePos(l), note + 12, 0.05);
+                    }
 
             yield;
         }
 
-        riser(drums, samplePos(96), samplePos(128), rng);
+        riser(drums, intense ? samplePos(224) : samplePos(96), intense ? samplePos(256) : samplePos(128), rng);
         yield;
 
         // Dotted-8th feedback delay, computed circularly so the loop stays seamless.
@@ -501,7 +521,8 @@ const Music = (() => {
         // Gentle saturation and normalize.
         let pre = 0;
         for (let i = 0; i < len; i++) pre = Math.max(pre, Math.abs(mix[i]));
-        for (let i = 0; i < len; i++) mix[i] = Math.tanh(mix[i] / pre * 1.4);
+        const drive = intense ? 2.0 : 1.4; // the intense mix is pushed harder so it also sounds louder
+        for (let i = 0; i < len; i++) mix[i] = Math.tanh(mix[i] / pre * drive);
         return normalize(mix, 0.9);
     }
 
@@ -539,10 +560,16 @@ class GameAudio {
         this.sfxVolume = 1;
         this.musicWanted = false;
         this.musicVoice = null;
+        this.musicRate = 1;
         this.playedThisFrame = 0;
+        this.musicIntense = false;
+        // The intense version renders right after the normal one; music starts once both are ready.
         runInSlices(Music.render(), 8, data => {
-            this.musicData = data;
-            this._onMusicReady();
+            runInSlices(Music.render(true), 8, intenseData => {
+                this.musicData = data;
+                this.musicIntenseData = intenseData;
+                this._onMusicReady();
+            });
         });
     }
 
@@ -579,6 +606,7 @@ class GameAudio {
     _onMusicReady() {
         if (!this.ctx || !this.musicData || this.musicBuffer) return;
         this.musicBuffer = this._buffer(this.musicData);
+        this.musicIntenseBuffer = this._buffer(this.musicIntenseData);
         if (this.musicWanted && !this.musicVoice) this._startVoice();
     }
 
@@ -606,15 +634,37 @@ class GameAudio {
     /** Starts the soundtrack from the top; a track that is still playing dips out first. */
     startMusic() {
         this.musicWanted = true;
+        this.musicIntense = false;
         this._startVoice();
     }
 
-    /** Fades the soundtrack out. */
-    stopMusic() {
+    /** Fades the soundtrack out; a tiny fade (e.g. 0.02 s) cuts it off without a click. */
+    stopMusic(fadeSeconds = 1.2) {
         this.musicWanted = false;
         if (this.musicVoice) {
-            this._fadeOut(this.musicVoice, 1.2);
+            this._fadeOut(this.musicVoice, fadeSeconds);
             this.musicVoice = null;
+        }
+    }
+
+    /** Music playback speed (1 = normal). Slowing it also lowers the pitch, like a tape winding down. */
+    setMusicRate(rate) {
+        if (Math.abs(rate - this.musicRate) < 0.001) return;
+        this.musicRate = rate;
+        if (this.musicVoice)
+            for (const src of this.musicVoice.srcs) src.playbackRate.setTargetAtTime(rate, this.ctx.currentTime, 0.05);
+    }
+
+    /** Crossfades between the normal and the intense version of the soundtrack (they play in sync). */
+    setMusicIntense(on) {
+        if (on === this.musicIntense) return;
+        this.musicIntense = on;
+        if (!this.musicVoice) return;
+        const now = this.ctx.currentTime;
+        for (const [g, level] of [[this.musicVoice.calm, on ? 0 : 1], [this.musicVoice.intense, on ? 1 : 0]]) {
+            g.gain.cancelScheduledValues(now);
+            g.gain.setValueAtTime(g.gain.value, now);
+            g.gain.linearRampToValueAtTime(level, now + 2);
         }
     }
 
@@ -625,16 +675,26 @@ class GameAudio {
             this._fadeOut(this.musicVoice, 0.06);
             at += 0.06;
         }
-        const src = this.ctx.createBufferSource();
-        src.buffer = this.musicBuffer;
-        src.loop = true;
         const gain = this.ctx.createGain();
         gain.gain.setValueAtTime(0, at);
         gain.gain.linearRampToValueAtTime(1, at + 0.05);
-        src.connect(gain);
         gain.connect(this.musicBus);
-        src.start(at);
-        this.musicVoice = { src, gain };
+        // Both versions start together and loop forever; their own gains pick which one is heard.
+        const layer = (buffer, level) => {
+            const src = this.ctx.createBufferSource();
+            src.buffer = buffer;
+            src.loop = true;
+            src.playbackRate.value = this.musicRate;
+            const g = this.ctx.createGain();
+            g.gain.value = level;
+            src.connect(g);
+            g.connect(gain);
+            src.start(at);
+            return [src, g];
+        };
+        const [calmSrc, calm] = layer(this.musicBuffer, this.musicIntense ? 0 : 1);
+        const [intenseSrc, intense] = layer(this.musicIntenseBuffer, this.musicIntense ? 1 : 0);
+        this.musicVoice = { srcs: [calmSrc, intenseSrc], gain, calm, intense };
     }
 
     _fadeOut(voice, seconds) {
@@ -643,7 +703,7 @@ class GameAudio {
         g.cancelScheduledValues(now);
         g.setValueAtTime(g.value, now);
         g.linearRampToValueAtTime(0, now + seconds);
-        voice.src.stop(now + seconds + 0.02);
+        for (const src of voice.srcs) src.stop(now + seconds + 0.02);
     }
 
     _oneShot(buffer, volume, rate) {
@@ -678,9 +738,9 @@ class GameAudio {
 
     /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
     static EFFECT_LEVELS = {
-        powerUp: 0.4, curse: 0.35, slow: 0.4, tiny: 0.35, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6,
+        powerUp: 0.4, curse: 0.35, bloat: 0.18, slow: 0.4, tiny: 0.18, shield: 0.35, auto: 0.18, freeze: 0.4, boom: 0.6, blast: 0.4,
         incoming: 0.25, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.3,
-        merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.25, expire: 0.25,
+        merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.12, expire: 0.25,
     };
 
     /** Plays a named power-up or event sound. The same sound won't stack within 60 ms. */

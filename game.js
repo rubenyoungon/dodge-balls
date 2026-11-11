@@ -67,6 +67,8 @@
             targetR: 0,      // new permanent radius during a resize event
             partner: null,   // the ball this one is joining with
             frozenTime: 0,   // seconds left frozen in place (freeze power-up); its event is paused meanwhile
+            blastTime: 0,    // seconds left easing back to blastSpeed after the blast power-up flung it away
+            blastSpeed: 0,   // the speed it had before the blast
             newTime: 0,      // seconds left of the "just arrived" highlight
             trail: [],
             trailColor: WHITE,
@@ -74,6 +76,11 @@
     }
     const mass = b => b.r * b.r;
     const speedOf = b => Math.hypot(b.vx, b.vy);
+    /** Sets a ball's speed after a bounce; if the bounce stopped it dead, it moves off along (ux, uy). */
+    function keepSpeed(b, speed, ux, uy) {
+        if (speedOf(b) < 0.001) { b.vx = ux; b.vy = uy; }
+        setSpeed(b, speed);
+    }
     function setSpeed(b, speed) {
         const s = speedOf(b);
         if (s < 0.001) return;
@@ -82,12 +89,12 @@
     }
 
     // Bloat and Sluggish are cursed: they make you bigger or slower
-    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5, Destroy: 6, Sluggish: 7 };
+    const PowerUpKind = { Slow: 0, Shrink: 1, Shield: 2, Bloat: 3, Auto: 4, Freeze: 5, Destroy: 6, Sluggish: 7, Blast: 8 };
 
     const DIFFICULTIES = [
-        { name: 'Easy', startBalls: 5, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, color: rgb(60, 170, 100) },
-        { name: 'Normal', startBalls: 8, speed: 1.0, newBallEvery: 30, eventEvery: 9, maxEventBalls: 2, color: rgb(50, 110, 220) },
-        { name: 'Hard', startBalls: 12, speed: 1.35, newBallEvery: 20, eventEvery: 6, maxEventBalls: 3, color: rgb(200, 60, 60) },
+        { name: 'Easy', startBalls: 6, speed: 0.7, newBallEvery: 40, eventEvery: 12, maxEventBalls: 1, idleLimit: 5, color: rgb(60, 170, 100) },
+        { name: 'Normal', startBalls: 8, speed: 1.0, newBallEvery: 30, eventEvery: 9, maxEventBalls: 2, idleLimit: 3, color: rgb(50, 110, 220) },
+        { name: 'Hard', startBalls: 12, speed: 1.35, newBallEvery: 20, eventEvery: 6, maxEventBalls: 3, idleLimit: 2, color: rgb(200, 60, 60) },
     ];
     let difficultyIndex = clamp(store.get('difficulty', 1) | 0, 0, DIFFICULTIES.length - 1);
     const currentDifficulty = () => DIFFICULTIES[difficultyIndex];
@@ -401,6 +408,8 @@
     }
 
     function update(dt) {
+        // The music slows along with the balls during slow-mo, though not as far, so it stays listenable.
+        sound.setMusicRate(1 - (1 - ballTimeScale()) * MUSIC_SLOW_DEPTH);
         if (playing()) {
             mouse = clampPlayer(mouse); // the radius can change with power-ups
             if (autoTime > 0) autoPilot(dt);
@@ -419,6 +428,7 @@
             updateIdle(dt);
 
             survived += dt;
+            sound.setMusicIntense(survived >= MUSIC_INTENSE_AFTER);
             eventTimer -= dt;
             if (eventTimer <= 0) triggerRandomEvent();
             updateBanners(dt);
@@ -441,7 +451,7 @@
                     store.set('best', best);
                 }
                 startFall();
-                sound.stopMusic();
+                sound.stopMusic(0.02); // cut the music the instant you're hit
                 sound.playLose();
                 if (document.pointerLockElement === canvas) document.exitPointerLock();
             }
@@ -486,6 +496,7 @@
         for (const b of balls) {
             if (b.frozenTime > 0) continue; // stays put; keeps its velocity for when it thaws
             updateBehavior(b, dt);
+            updateBlast(b, dt);
             b.x += b.vx * dt;
             b.y += b.vy * dt;
 
@@ -500,8 +511,6 @@
         for (let i = 0; i < balls.length; i++) {
             for (let j = i + 1; j < balls.length; j++) {
                 const a = balls[i], c = balls[j];
-                // A rushing ball ghosts through the others so its telegraphed line stays true.
-                if (a.mode === Mode.Rushing || c.mode === Mode.Rushing) continue;
                 if (a.partner === c) continue; // joining balls are allowed to touch
                 const dx = c.x - a.x, dy = c.y - a.y;
                 const distSq = dx * dx + dy * dy;
@@ -540,11 +549,21 @@
 
                 sound.play(relVel, (a.r + c.r) / 2);
 
+                // A rushing ball bounces off the others instead of passing through them, but both balls
+                // keep their own speed: the rusher stays fast and the ball it hits isn't flung at dash speed.
+                const rush = a.mode === Mode.Rushing || c.mode === Mode.Rushing;
+                const speedA = speedOf(a), speedC = speedOf(c);
+
                 const impulse = 2 * relVel / total;
                 a.vx -= impulse * mc * nx;
                 a.vy -= impulse * mc * ny;
                 c.vx += impulse * ma * nx;
                 c.vy += impulse * ma * ny;
+
+                if (rush) {
+                    keepSpeed(a, speedA, -nx, -ny);
+                    keepSpeed(c, speedC, nx, ny);
+                }
             }
         }
 
@@ -563,11 +582,14 @@
     let powerUpTimer = 0;
     const AUTO_DURATION = 5;
     const FREEZE_DURATION = 4;
-    const DESTROY_CHANCE = 0.06; // the bomb is rare: about 1 in 17 power-ups
+    const DESTROY_CHANCE = 0.04; // the bomb is rare: about 1 in 25 power-ups
     const SLUGGISH_DURATION = 3.4, SLUGGISH_FACTOR = 0.5; // your moves only go half as far
     // The curses together are a bit rarer than one good power-up each, so grabbing stays worth it.
     const CURSE_CHANCE = 0.2;
-    const GOOD_KINDS = [PowerUpKind.Slow, PowerUpKind.Shrink, PowerUpKind.Shield, PowerUpKind.Auto, PowerUpKind.Freeze];
+    const BLAST_RADIUS = 260;      // balls this close to you get blown away
+    const BLAST_SPEED = 750;       // launch speed for a ball right next to you; less further out
+    const BLAST_EASE_TIME = 0.8;   // seconds for a blown-away ball to settle back to its old speed
+    const GOOD_KINDS = [PowerUpKind.Slow, PowerUpKind.Shrink, PowerUpKind.Shield, PowerUpKind.Auto, PowerUpKind.Freeze, PowerUpKind.Blast];
     const CURSED_KINDS = [PowerUpKind.Bloat, PowerUpKind.Sluggish];
     const isCursed = kind => CURSED_KINDS.includes(kind);
     let slowTime = 0, shrinkTime = 0, shieldTime = 0, bloatTime = 0, autoTime = 0, sluggishTime = 0;
@@ -575,6 +597,8 @@
     let playerR = PLAYER_RADIUS;
 
     // Eases back to full speed over the last half second of the slow-down.
+    const MUSIC_INTENSE_AFTER = 60; // seconds into a run before the soundtrack switches to its intense version
+    const MUSIC_SLOW_DEPTH = 0.5; // the music slows by half as much as the balls (0.7x at full slow-mo)
     const ballTimeScale = () => slowTime <= 0 ? 1 : SLOW_FACTOR + (1 - SLOW_FACTOR) * (1 - Math.min(1, slowTime / 0.5));
 
     function powerUpColor(kind) {
@@ -586,6 +610,7 @@
             case PowerUpKind.Freeze: return rgb(170, 200, 255);
             case PowerUpKind.Destroy: return rgb(255, 150, 40);
             case PowerUpKind.Sluggish: return rgb(160, 100, 235);
+            case PowerUpKind.Blast: return rgb(60, 230, 180);
             default: return rgb(255, 255, 255);
         }
     }
@@ -642,9 +667,9 @@
     }
 
     const COLLECT_SOUNDS = {
-        [PowerUpKind.Slow]: 'slow', [PowerUpKind.Shrink]: 'tiny', [PowerUpKind.Bloat]: 'curse',
+        [PowerUpKind.Slow]: 'slow', [PowerUpKind.Shrink]: 'tiny', [PowerUpKind.Bloat]: 'bloat',
         [PowerUpKind.Sluggish]: 'curse', [PowerUpKind.Shield]: 'shield', [PowerUpKind.Auto]: 'auto',
-        [PowerUpKind.Freeze]: 'freeze', [PowerUpKind.Destroy]: 'boom',
+        [PowerUpKind.Freeze]: 'freeze', [PowerUpKind.Destroy]: 'boom', [PowerUpKind.Blast]: 'blast',
     };
 
     function collect(kind) {
@@ -678,7 +703,10 @@
                 break;
             }
             case PowerUpKind.Destroy: {
-                const target = pickRandom(balls);
+                // Takes out the ball closest to the player, the one most likely to hit them next.
+                let target = null;
+                for (const b of balls)
+                    if (!target || dist(b.x, b.y, mouse.x, mouse.y) < dist(target.x, target.y, mouse.x, mouse.y)) target = b;
                 if (target) {
                     // A ball that was merging with it just carries on alone
                     for (const b of balls)
@@ -694,7 +722,38 @@
                 showBanner('BOOM!', powerUpColor(kind));
                 break;
             }
+            case PowerUpKind.Blast: {
+                // A shockwave flings every nearby ball straight away from you; the closer, the harder.
+                for (const b of balls) {
+                    if (b.frozenTime > 0 || b.mode === Mode.Joining) continue; // ice stays put; merges carry on
+                    const dx = b.x - mouse.x, dy = b.y - mouse.y;
+                    const d = Math.hypot(dx, dy);
+                    if (d >= BLAST_RADIUS + b.r) continue;
+                    const nx = d > 0.001 ? dx / d : 1, ny = d > 0.001 ? dy / d : 0;
+                    const before = speedOf(b);
+                    const push = BLAST_SPEED * (1 - 0.6 * Math.max(0, d - b.r) / BLAST_RADIUS);
+                    const speed = Math.max(before, push);
+                    b.vx = nx * speed;
+                    b.vy = ny * speed;
+                    if (b.blastTime <= 0) b.blastSpeed = before; // a second blast keeps the original speed
+                    b.blastTime = BLAST_EASE_TIME;
+                }
+                addPop(mouse.x, mouse.y, playerR, powerUpColor(kind), BLAST_RADIUS);
+                addPop(mouse.x, mouse.y, playerR, WHITE, BLAST_RADIUS * 0.6);
+                showBanner('BLAST!', powerUpColor(kind));
+                break;
+            }
         }
+    }
+
+    // A blown-away ball slows back to the speed it had before the blast. Balls in an event
+    // that sets its own speed (a rush, a boost, homing...) are left to that event.
+    function updateBlast(b, dt) {
+        if (b.blastTime <= 0) return;
+        b.blastTime = Math.max(0, b.blastTime - dt);
+        if (b.mode !== Mode.Normal) { b.blastTime = 0; return; }
+        const speed = speedOf(b);
+        setSpeed(b, b.blastTime > 0 ? speed + (b.blastSpeed - speed) * Math.min(1, dt * 5) : b.blastSpeed);
     }
 
     // ---- Autopilot: steers the red ball by itself for a few seconds ----
@@ -883,7 +942,7 @@
     // Expanding ring shown when balls join or split
     const pops = [];
     const POP_DURATION = 0.45;
-    const addPop = (x, y, r, color) => pops.push({ x, y, r, color, age: 0 });
+    const addPop = (x, y, r, color, grow = 35) => pops.push({ x, y, r, color, grow, age: 0 });
 
     function updatePops(dt) {
         for (const p of pops) p.age += dt;
@@ -1022,9 +1081,9 @@
 
     // ---- Anti-camping: standing still sends the two nearest balls rushing at you ----
 
-    const IDLE_LIMIT = 3;          // seconds without moving before the punishment
     const IDLE_MOVE_RADIUS = 30;   // moving less than this from where you stopped counts as standing still
     const IDLE_WARN_TIME = 1.2;    // a ring closes in on the player over the last stretch
+    const idleLimit = () => currentDifficulty().idleLimit; // seconds standing still before the rush; shorter on harder settings
     const IDLE_RUSH_MIN_DIST = 150; // too-close balls are skipped so the rush stays dodgeable
     let idleAnchor = { x: W / 2, y: H / 2 };
     let idleTime = 0;
@@ -1038,11 +1097,11 @@
         const before = idleTime;
         idleTime += dt;
         // The moment the warning ring appears, tell the player to move.
-        if (before < IDLE_LIMIT - IDLE_WARN_TIME && idleTime >= IDLE_LIMIT - IDLE_WARN_TIME) {
+        if (before < idleLimit() - IDLE_WARN_TIME && idleTime >= idleLimit() - IDLE_WARN_TIME) {
             showBanner('MOVE IT!', RUSH_LIGHT);
             sound.playEffect('moveIt');
         }
-        if (idleTime < IDLE_LIMIT) return;
+        if (idleTime < idleLimit()) return;
 
         const picks = balls
             .filter(b => b.mode === Mode.Normal && b.frozenTime <= 0 && dist(b.x, b.y, mouse.x, mouse.y) > IDLE_RUSH_MIN_DIST)
@@ -1061,7 +1120,7 @@
     }
 
     function drawIdleWarning(player) {
-        const left = IDLE_LIMIT - idleTime;
+        const left = idleLimit() - idleTime;
         if (left > IDLE_WARN_TIME) return;
         const t = 1 - left / IDLE_WARN_TIME; // 0 → 1 as the rush gets closer
         strokeCircle(player.x, player.y, playerR + 6 + 40 * (1 - t), css(RUSH_LIGHT, 60 + 160 * t), 2, 'dash', survived * 8);
@@ -1383,6 +1442,16 @@
                 line(x + 4, y - 8, x + 7, y - 11, fill, 1.5); // the fuse
                 fillCircle(x + 8, y - 12, 2, css(rgb(255, 240, 160)));
                 break;
+            case PowerUpKind.Blast: // dot with shock waves rippling out on both sides
+                fillCircle(x, y, 3, fill);
+                for (const k of [6, 10])
+                    for (const side of [0, Math.PI]) {
+                        ctx.beginPath();
+                        ctx.arc(x, y, k, side - 0.9, side + 0.9);
+                        setPen(fill, 2);
+                        ctx.stroke();
+                    }
+                break;
             case PowerUpKind.Freeze: // snowflake
                 for (let k = 0; k < 3; k++) {
                     const a = Math.PI / 2 + k * TAU / 6;
@@ -1451,7 +1520,7 @@
     function drawPops() {
         for (const p of pops) {
             const t = p.age / POP_DURATION;
-            strokeCircle(p.x, p.y, p.r + 35 * t, css(p.color, 220 * (1 - t)), 3 * (1 - t) + 1);
+            strokeCircle(p.x, p.y, p.r + p.grow * t, css(p.color, 220 * (1 - t)), 3 * (1 - t) + 1);
         }
     }
 
