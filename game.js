@@ -987,6 +987,7 @@
     // Speed-up event: balls heat up and go faster for a while
     const BOOST_LIGHT = rgb(255, 250, 190), BOOST_DARK = rgb(210, 130, 20);
     const BOOST_FACTOR = 1.75, BOOST_MIN_DURATION = 3, BOOST_MAX_DURATION = 5;
+    const BOOST_MIN_SPEED = 400; // boosted balls go at least this fast (times the difficulty speed), so slow balls still feel boosted
 
     // Giant event timing: warning, then grow / hold / shrink
     const GROW_WARN_TIME = 0.9, GROW_UP = 0.35, GROW_HOLD = 10, GROW_DOWN = 0.45;
@@ -1249,9 +1250,11 @@
 
             case Mode.Boosted: {
                 // Ramp up quickly, hold, then ease back down over the last half second
-                const boost = b.modeTime < 0.5 ? 1 + (BOOST_FACTOR - 1) * (b.modeTime / 0.5) : BOOST_FACTOR;
+                const peak = Math.max(b.cruiseSpeed * BOOST_FACTOR, BOOST_MIN_SPEED * d.speed);
+                const ramp = b.modeTime < 0.5 ? b.modeTime / 0.5 : 1;
+                const target = b.cruiseSpeed + (peak - b.cruiseSpeed) * ramp;
                 const speed = speedOf(b);
-                setSpeed(b, speed + (b.cruiseSpeed * boost - speed) * Math.min(1, dt * 6));
+                setSpeed(b, speed + (target - speed) * Math.min(1, dt * 6));
                 b.modeTime -= dt;
                 if (b.modeTime <= 0) {
                     setSpeed(b, b.cruiseSpeed);
