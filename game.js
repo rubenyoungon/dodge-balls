@@ -800,7 +800,7 @@
             const sx = b.x + b.vx * b.modeTime, sy = b.y + b.vy * b.modeTime;
             const target = playerAt(b.modeTime);
             const len = Math.max(1, dist(sx, sy, target.x, target.y));
-            const dash = rushDashSpeed(b) * (t - b.modeTime);
+            const dash = rushDashSpeed() * (t - b.modeTime);
             x = sx + (target.x - sx) / len * dash;
             y = sy + (target.y - sy) / len * dash;
         }
@@ -1170,7 +1170,8 @@
         banners.forEach((b, i) => { b.y += (BANNER_TOP + i * BANNER_GAP - b.y) * Math.min(1, dt * 12); });
     }
 
-    const rushDashSpeed = b => Math.max(b.cruiseSpeed * 2, 450 * currentDifficulty().speed);
+    // Every rushing ball dashes at the same speed (per difficulty), however fast it was going before.
+    const rushDashSpeed = () => 450 * currentDifficulty().speed;
 
     function updateBehavior(b, dt) {
         const d = currentDifficulty();
@@ -1183,7 +1184,7 @@
                 if (b.modeTime <= 0) {
                     const dx = mouse.x - b.x, dy = mouse.y - b.y;
                     const len = Math.max(1, Math.hypot(dx, dy));
-                    const dash = rushDashSpeed(b);
+                    const dash = rushDashSpeed();
                     b.vx = dx / len * dash;
                     b.vy = dy / len * dash;
                     b.mode = Mode.Rushing;
