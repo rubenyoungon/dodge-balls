@@ -991,6 +991,12 @@
     // Giant event timing: warning, then grow / hold / shrink
     const GROW_WARN_TIME = 0.9, GROW_UP = 0.35, GROW_HOLD = 10, GROW_DOWN = 0.45;
     const GROW_TOTAL = GROW_UP + GROW_HOLD + GROW_DOWN;
+    // A fast ball that turns giant slows down while it's big (never below GIANT_FAST_SPEED).
+    // The faster it goes, the harder it slows: from GIANT_SLOW_MIN at GIANT_FAST_SPEED to GIANT_SLOW_MAX at GIANT_VERY_FAST_SPEED and up.
+    const GIANT_FAST_SPEED = 260, GIANT_VERY_FAST_SPEED = 600;
+    const GIANT_SLOW_MIN = 0.8, GIANT_SLOW_MAX = 0.6; // speed multipliers
+    const giantSlowFactor = speed => GIANT_SLOW_MIN + (GIANT_SLOW_MAX - GIANT_SLOW_MIN)
+        * clamp((speed - GIANT_FAST_SPEED) / (GIANT_VERY_FAST_SPEED - GIANT_FAST_SPEED), 0, 1);
 
     // Resize event: balls permanently grow or shrink, after a short warning
     const RESIZE_LIGHT = rgb(235, 235, 250), RESIZE_DARK = rgb(90, 95, 140);
@@ -1258,6 +1264,7 @@
                 if (b.modeTime <= 0) {
                     b.mode = Mode.Growing;
                     b.modeTime = GROW_TOTAL;
+                    b.cruiseSpeed = speedOf(b);
                 }
                 break;
 
@@ -1268,9 +1275,17 @@
                     : e < GROW_UP + GROW_HOLD ? 1
                         : 1 - smoothStep((e - GROW_UP - GROW_HOLD) / GROW_DOWN);
                 b.r = b.baseR + (b.bigR - b.baseR) * s;
+                if (b.cruiseSpeed > GIANT_FAST_SPEED) {
+                    // Ease toward the slower speed as it grows, and back as it shrinks
+                    const slow = Math.max(GIANT_FAST_SPEED, b.cruiseSpeed * giantSlowFactor(b.cruiseSpeed));
+                    const target = b.cruiseSpeed + (slow - b.cruiseSpeed) * s;
+                    const speed = speedOf(b);
+                    setSpeed(b, speed + (target - speed) * Math.min(1, dt * 6));
+                }
                 if (b.modeTime <= 0) {
                     b.r = b.baseR;
                     b.mode = Mode.Normal;
+                    if (b.cruiseSpeed > GIANT_FAST_SPEED) setSpeed(b, b.cruiseSpeed);
                 }
                 break;
             }
