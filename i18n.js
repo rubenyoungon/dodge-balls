@@ -76,12 +76,10 @@ const I18N = (() => {
         return text.replace(/\{(\w+)\}/g, (m, name) => name in vars ? String(vars[name]) : m);
     }
 
-    /** A number with a fixed number of decimals, using the language's decimal separator (12.3 or 12,3). */
-    const num = (x, digits = 1) =>
-        x.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
+    /** A date and local time written out in the current language, e.g. "11 November 2026 at 14:32" or "11 november 2026 om 14:32". */
+    const date = d => d.toLocaleString(locale, {
+        day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
 
-    /** A date written out in the current language, e.g. "11 November 2026" or "11 november 2026". */
-    const date = d => d.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
-
-    return { lang, t, num, date };
+    return { lang, t, date };
 })();

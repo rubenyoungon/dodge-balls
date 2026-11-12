@@ -371,8 +371,8 @@
     const MENU_W = 380, MENU_H = 320;
     const menuRect = () => rect(Math.floor((W - MENU_W) / 2), Math.floor((H - MENU_H) / 2), MENU_W, MENU_H);
     const sliderRect = i => { const m = menuRect(); return rect(m.x + 40, m.y + 115 + i * 62, MENU_W - 80, 8); };
-    const resumeButton = () => { const m = menuRect(); return rect(m.x + 40, m.y + m.h - 70, 140, 44); };
-    const quitButton = () => { const m = menuRect(); return rect(m.x + m.w - 180, m.y + m.h - 70, 140, 44); };
+    const resumeButton = () => { const m = menuRect(); return rect(m.x + 40, m.y + 226, 140, 44); };
+    const quitButton = () => { const m = menuRect(); return rect(m.x + m.w - 180, m.y + 226, 140, 44); };
 
     const pauseButton = () => rect(W - 64, 8, 56, 56); // touch only
     const TOUCH_SPEED = 1.15; // a little faster than the finger, since phone screens are small
@@ -982,7 +982,7 @@
     // A dark point opens somewhere away from the player, then pulls every free ball toward it for a second.
     // Afterwards the balls ease back to the speed they had before (the same easing as the blast power-up).
 
-    const WELL_CHANCE = 0.1;          // share of events that become a gravity well
+    const WELL_CHANCE = 0.05;         // share of events that become a gravity well
     const WELL_WARN_TIME = 0.9;       // the well forms before it starts pulling
     const WELL_PULL_TIME = 1;
     const WELL_FADE_TIME = 0.35;      // the well closes after the pull
@@ -1628,7 +1628,8 @@
             ctx.fillRect(x, y, w, h);
             ctx.fillStyle = css(c, 170);
             ctx.fillRect(x, y, w * (t / total), h);
-            drawText(`${label} ${I18N.num(t)}s`, x + 4, y + h / 2 + 1, 10, true, 'white', 'left', 'middle');
+            // Whole seconds, rounded up so the last second shows "1s" rather than "0s".
+            drawText(`${label} ${Math.ceil(t)}s`, x + 4, y + h / 2 + 1, 10, true, 'white', 'left', 'middle');
             y += h + 4;
         };
         bar(tr('barSlowMo'), slowTime, SLOW_DURATION, PowerUpKind.Slow);
@@ -1850,7 +1851,7 @@
         const hint = !touchMode ? tr('hintMouse')
             : window.innerHeight > window.innerWidth ? tr('hintPortrait')
                 : tr('hintTouch');
-        drawText(hint, W / 2, H - 28, touchMode ? 13 : 10, false, css(rgb(200, 210, 230), touchMode ? 190 : 140), 'center', 'middle');
+        drawText(hint, W / 2, H - 56, touchMode ? 13 : 10, false, css(rgb(200, 210, 230), touchMode ? 190 : 140), 'center', 'middle');
     }
 
     function drawLastUpdated(x, y, align) {
@@ -1917,7 +1918,8 @@
 
         const hint = touchMode ? '' : playing() ? tr('resumeHint') : tr('escToClose');
         drawText(hint, m.x + m.w / 2, m.y + m.h + 16, 9, false, css(rgb(200, 210, 230), 140), 'center', 'middle');
-        drawLastUpdated(m.x + m.w / 2, m.y + m.h - 13, 'center');
+        // Centered in the space below the buttons, with room above and below it.
+        drawLastUpdated(m.x + m.w / 2, m.y + m.h - 25, 'center');
     }
 
     function drawLockMessage() {
