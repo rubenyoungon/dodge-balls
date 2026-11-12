@@ -748,7 +748,7 @@ class GameAudio {
     /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
     static EFFECT_LEVELS = {
         powerUp: 0.4, curse: 0.12, bloat: 0.18, slow: 0.4, tiny: 0.08, shield: 0.35, auto: 0.14, freeze: 0.4, boom: 0.6, blast: 0.4,
-        incoming: 0.09, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.22, speedUp: 0.22, gravityWell: 0.35,
+        incoming: 0.09, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.3, speedUp: 0.22, gravityWell: 0.35,
         merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.12, expire: 0.25,
     };
 

@@ -22,7 +22,7 @@ Then go to <http://localhost:8123>.
 - **Don't camp.** If you stand still too long (5 s on Easy, 3 s on Normal, 2 s on Hard), the two nearest balls rush at you. A closing orange ring and a **MOVE IT!** banner warn you first, then **INCOMING!** shows when the balls come at you.
 - Press **Esc** to pause. The pause menu has music and sound-effect volume sliders (drag them, or pick one with ↑/↓ and adjust with ←/→) and lets you quit to the menu.
 - The game is in English or Dutch, following your browser's language settings (Dutch when it comes before English in your preferred languages).
-- The menus show when the game was last updated: the date of the newest commit on GitHub. It's fetched from the GitHub API (cached for an hour) and is hidden if that can't be reached.
+- The menus show when the game was last updated: the date and time (in your local time zone) of the newest commit on GitHub. It's fetched from the GitHub API (cached for an hour) and is hidden if that can't be reached.
 - Every power-up and event has its own sound: a chime for good power-ups, a sour slide for curses, a boom for the bomb, a thump and whoosh for the blast, a warning chime when a ball hunts you, a whoosh when a ball launches at you, and so on. A soft blip tells you when a timed power-up runs out. These follow the sound-effect volume slider.
 
 ### Difficulty
