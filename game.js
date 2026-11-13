@@ -1065,7 +1065,7 @@
     // Speed-up event: balls heat up and go faster for a while
     const BOOST_LIGHT = rgb(255, 250, 190), BOOST_DARK = rgb(210, 130, 20);
     const BOOST_FACTOR = 1.75, BOOST_MIN_DURATION = 3, BOOST_MAX_DURATION = 5;
-    const BOOST_MIN_SPEED = 400; // boosted balls go at least this fast (times the difficulty speed), so slow balls still feel boosted
+    const BOOST_MIN_SPEED = 520; // boosted balls go at least this fast (times the difficulty speed), so slow balls still feel boosted
     const BOOST_MAX_SPEED = 650; // ...and at most this fast, so already-fast balls don't become undodgeable
 
     // Giant event timing: warning, then grow / hold / shrink
