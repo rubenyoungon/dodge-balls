@@ -571,7 +571,7 @@ class GameAudio {
         this.musicVoice = null;
         this.musicRate = 1;
         this.playedThisFrame = 0;
-        this.musicIntense = false;
+        this.musicLevel = 0; // soundtrack intensity, 0..1 (see musicSettings)
         // The intense version renders right after the normal one; music starts once both are ready.
         runInSlices(Music.render(), 8, data => {
             runInSlices(Music.render(true), 8, intenseData => {
@@ -643,7 +643,7 @@ class GameAudio {
     /** Starts the soundtrack from the top; a track that is still playing dips out first. */
     startMusic() {
         this.musicWanted = true;
-        this.musicIntense = false;
+        this.musicLevel = 0;
         this._startVoice();
     }
 
@@ -664,16 +664,40 @@ class GameAudio {
             for (const src of this.musicVoice.srcs) src.playbackRate.setTargetAtTime(rate, this.ctx.currentTime, 0.05);
     }
 
-    /** Crossfades between the normal and the intense version of the soundtrack (they play in sync). */
-    setMusicIntense(on) {
-        if (on === this.musicIntense) return;
-        this.musicIntense = on;
-        if (!this.musicVoice) return;
+    /**
+     * How the soundtrack sounds at an intensity level from 0 (start of a run) to 1 (as wild as it gets):
+     * - 0 to 0.35: the normal version swells from slightly quieter to full volume.
+     * - 0.35 to 0.6: the normal version crossfades into the intense one (they play in sync).
+     * - 0.6 to 1: the intense version keeps getting louder and edgier.
+     */
+    static musicSettings(level) {
+        const part = (from, to) => Math.min(1, Math.max(0, (level - from) / (to - from)));
+        const open = part(0, 0.35), mix = part(0.35, 0.6), push = part(0.6, 1);
+        const smooth = mix * mix * (3 - 2 * mix);
+        return {
+            calm: 1 - smooth,
+            intense: smooth,
+            gain: (0.8 + 0.2 * open) * (1 + 0.25 * push),
+            shelf: 5 * push, // dB of extra treble
+        };
+    }
+
+    /** Sets how intense the soundtrack is, 0..1; changes glide in smoothly. */
+    setMusicIntensity(level) {
+        level = Math.min(1, Math.max(0, level));
+        if (Math.abs(level - this.musicLevel) < 0.002) return;
+        this.musicLevel = level;
+        if (this.musicVoice) this._applyIntensity(this.musicVoice, 0.4);
+    }
+
+    /** Moves a voice's gains and treble to the current intensity, over `glide` seconds (0 = at once). */
+    _applyIntensity(voice, glide) {
+        const s = GameAudio.musicSettings(this.musicLevel);
         const now = this.ctx.currentTime;
-        for (const [g, level] of [[this.musicVoice.calm, on ? 0 : 1], [this.musicVoice.intense, on ? 1 : 0]]) {
-            g.gain.cancelScheduledValues(now);
-            g.gain.setValueAtTime(g.gain.value, now);
-            g.gain.linearRampToValueAtTime(level, now + 2);
+        for (const [param, value] of [[voice.calm.gain, s.calm],
+            [voice.intense.gain, s.intense], [voice.level.gain, s.gain], [voice.shelf.gain, s.shelf]]) {
+            if (glide > 0) param.setTargetAtTime(value, now, glide / 3);
+            else param.value = value;
         }
     }
 
@@ -687,23 +711,30 @@ class GameAudio {
         const gain = this.ctx.createGain();
         gain.gain.setValueAtTime(0, at);
         gain.gain.linearRampToValueAtTime(1, at + 0.05);
-        gain.connect(this.musicBus);
+        // Intensity chain: a treble shelf and a level, then the music bus.
+        const shelf = this.ctx.createBiquadFilter();
+        shelf.type = 'highshelf';
+        shelf.frequency.value = 5000;
+        const level = this.ctx.createGain();
+        gain.connect(shelf);
+        shelf.connect(level);
+        level.connect(this.musicBus);
         // Both versions start together and loop forever; their own gains pick which one is heard.
-        const layer = (buffer, level) => {
+        const layer = buffer => {
             const src = this.ctx.createBufferSource();
             src.buffer = buffer;
             src.loop = true;
             src.playbackRate.value = this.musicRate;
             const g = this.ctx.createGain();
-            g.gain.value = level;
             src.connect(g);
             g.connect(gain);
             src.start(at);
             return [src, g];
         };
-        const [calmSrc, calm] = layer(this.musicBuffer, this.musicIntense ? 0 : 1);
-        const [intenseSrc, intense] = layer(this.musicIntenseBuffer, this.musicIntense ? 1 : 0);
-        this.musicVoice = { srcs: [calmSrc, intenseSrc], gain, calm, intense };
+        const [calmSrc, calm] = layer(this.musicBuffer);
+        const [intenseSrc, intense] = layer(this.musicIntenseBuffer);
+        this.musicVoice = { srcs: [calmSrc, intenseSrc], gain, calm, intense, shelf, level };
+        this._applyIntensity(this.musicVoice, 0);
     }
 
     _fadeOut(voice, seconds) {
