@@ -2029,7 +2029,9 @@
         if (playing()) { drawPlayerEffects(player); drawIdleWarning(player); drawActiveEffects(); }
 
         const d = currentDifficulty();
-        const hud = tr('hud', { time: Math.floor(survived), balls: balls.length, difficulty: tr(d.name), best: Math.floor(best[difficultyIndex]) });
+        // While beating the record, the record counts up live along with the time
+        const shownBest = playing() ? Math.max(best[difficultyIndex], survived) : best[difficultyIndex];
+        const hud = tr('hud', { time: Math.floor(survived), balls: balls.length, difficulty: tr(d.name), best: Math.floor(shownBest) });
         drawText(hud, 12, 10, 14, true, 'white');
 
         drawBanners();
