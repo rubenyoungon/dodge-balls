@@ -228,8 +228,8 @@ function synthesizeEffects() {
     [57, 51, 57, 51].forEach((n, i) => {
         const at = i * 0.16, f = midi(n);
         tone(fx.hunted, at, 0.3, f, f * 0.96, { vol: 0.6, attack: 0.01, decay: 0.13 });
-        tone(fx.hunted, at, 0.24, f * 1.008, f * 0.968, { wave: 'saw', vol: 0.22, attack: 0.01, decay: 0.09 });
-        tone(fx.hunted, at, 0.2, midi(n + 13), midi(n + 13) * 0.96, { wave: 'tri', vol: 0.07, attack: 0.01, decay: 0.06 });
+        tone(fx.hunted, at, 0.24, f * 1.008, f * 0.968, { wave: 'saw', vol: 0.35, attack: 0.01, decay: 0.09 });
+        tone(fx.hunted, at, 0.2, midi(n + 13), midi(n + 13) * 0.96, { wave: 'tri', vol: 0.12, attack: 0.01, decay: 0.06 });
     });
 
     // Speed up: a revving engine-like rise.
@@ -571,7 +571,7 @@ class GameAudio {
         this.musicVoice = null;
         this.musicRate = 1;
         this.playedThisFrame = 0;
-        this.musicIntense = false;
+        this.musicLevel = 0; // soundtrack intensity, 0..1 (see musicSettings)
         // The intense version renders right after the normal one; music starts once both are ready.
         runInSlices(Music.render(), 8, data => {
             runInSlices(Music.render(true), 8, intenseData => {
@@ -643,7 +643,7 @@ class GameAudio {
     /** Starts the soundtrack from the top; a track that is still playing dips out first. */
     startMusic() {
         this.musicWanted = true;
-        this.musicIntense = false;
+        this.musicLevel = 0;
         this._startVoice();
     }
 
@@ -664,16 +664,40 @@ class GameAudio {
             for (const src of this.musicVoice.srcs) src.playbackRate.setTargetAtTime(rate, this.ctx.currentTime, 0.05);
     }
 
-    /** Crossfades between the normal and the intense version of the soundtrack (they play in sync). */
-    setMusicIntense(on) {
-        if (on === this.musicIntense) return;
-        this.musicIntense = on;
-        if (!this.musicVoice) return;
+    /**
+     * How the soundtrack sounds at an intensity level from 0 (start of a run) to 1 (as wild as it gets):
+     * - 0 to 0.35: the normal version swells from slightly quieter to full volume.
+     * - 0.35 to 0.6: the normal version crossfades into the intense one (they play in sync).
+     * - 0.6 to 1: the intense version keeps getting louder and edgier.
+     */
+    static musicSettings(level) {
+        const part = (from, to) => Math.min(1, Math.max(0, (level - from) / (to - from)));
+        const open = part(0, 0.35), mix = part(0.35, 0.6), push = part(0.6, 1);
+        const smooth = mix * mix * (3 - 2 * mix);
+        return {
+            calm: 1 - smooth,
+            intense: smooth,
+            gain: (0.8 + 0.2 * open) * (1 + 0.25 * push),
+            shelf: 5 * push, // dB of extra treble
+        };
+    }
+
+    /** Sets how intense the soundtrack is, 0..1; changes glide in smoothly. */
+    setMusicIntensity(level) {
+        level = Math.min(1, Math.max(0, level));
+        if (Math.abs(level - this.musicLevel) < 0.002) return;
+        this.musicLevel = level;
+        if (this.musicVoice) this._applyIntensity(this.musicVoice, 0.4);
+    }
+
+    /** Moves a voice's gains and treble to the current intensity, over `glide` seconds (0 = at once). */
+    _applyIntensity(voice, glide) {
+        const s = GameAudio.musicSettings(this.musicLevel);
         const now = this.ctx.currentTime;
-        for (const [g, level] of [[this.musicVoice.calm, on ? 0 : 1], [this.musicVoice.intense, on ? 1 : 0]]) {
-            g.gain.cancelScheduledValues(now);
-            g.gain.setValueAtTime(g.gain.value, now);
-            g.gain.linearRampToValueAtTime(level, now + 2);
+        for (const [param, value] of [[voice.calm.gain, s.calm],
+            [voice.intense.gain, s.intense], [voice.level.gain, s.gain], [voice.shelf.gain, s.shelf]]) {
+            if (glide > 0) param.setTargetAtTime(value, now, glide / 3);
+            else param.value = value;
         }
     }
 
@@ -687,23 +711,30 @@ class GameAudio {
         const gain = this.ctx.createGain();
         gain.gain.setValueAtTime(0, at);
         gain.gain.linearRampToValueAtTime(1, at + 0.05);
-        gain.connect(this.musicBus);
+        // Intensity chain: a treble shelf and a level, then the music bus.
+        const shelf = this.ctx.createBiquadFilter();
+        shelf.type = 'highshelf';
+        shelf.frequency.value = 5000;
+        const level = this.ctx.createGain();
+        gain.connect(shelf);
+        shelf.connect(level);
+        level.connect(this.musicBus);
         // Both versions start together and loop forever; their own gains pick which one is heard.
-        const layer = (buffer, level) => {
+        const layer = buffer => {
             const src = this.ctx.createBufferSource();
             src.buffer = buffer;
             src.loop = true;
             src.playbackRate.value = this.musicRate;
             const g = this.ctx.createGain();
-            g.gain.value = level;
             src.connect(g);
             g.connect(gain);
             src.start(at);
             return [src, g];
         };
-        const [calmSrc, calm] = layer(this.musicBuffer, this.musicIntense ? 0 : 1);
-        const [intenseSrc, intense] = layer(this.musicIntenseBuffer, this.musicIntense ? 1 : 0);
-        this.musicVoice = { srcs: [calmSrc, intenseSrc], gain, calm, intense };
+        const [calmSrc, calm] = layer(this.musicBuffer);
+        const [intenseSrc, intense] = layer(this.musicIntenseBuffer);
+        this.musicVoice = { srcs: [calmSrc, intenseSrc], gain, calm, intense, shelf, level };
+        this._applyIntensity(this.musicVoice, 0);
     }
 
     _fadeOut(voice, seconds) {
@@ -748,7 +779,7 @@ class GameAudio {
     /** Effect loudness, so a bomb is loud and a reminder blip stays in the background. */
     static EFFECT_LEVELS = {
         powerUp: 0.4, curse: 0.12, bloat: 0.18, slow: 0.4, tiny: 0.08, shield: 0.35, auto: 0.14, freeze: 0.4, boom: 0.6, blast: 0.4,
-        incoming: 0.09, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.3, speedUp: 0.22, gravityWell: 0.35,
+        incoming: 0.09, launch: 0.3, wobble: 0.3, giant: 0.4, grow: 0.3, shrink: 0.3, hunted: 0.9, speedUp: 0.22, gravityWell: 0.35,
         merge: 0.3, merged: 0.35, split: 0.3, splitPop: 0.35, newBall: 0.3, moveIt: 0.12, expire: 0.25,
     };
 

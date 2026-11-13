@@ -454,7 +454,7 @@
             updateIdle(dt);
 
             survived += dt;
-            sound.setMusicIntense(survived >= MUSIC_INTENSE_AFTER);
+            sound.setMusicIntensity(survived / MUSIC_FULL_INTENSITY_AFTER);
             eventTimer -= dt;
             if (eventTimer <= 0) triggerRandomEvent();
             updateBanners(dt);
@@ -626,7 +626,10 @@
     let playerR = PLAYER_RADIUS;
 
     // Eases back to full speed over the last half second of the slow-down.
-    const MUSIC_INTENSE_AFTER = 60; // seconds into a run before the soundtrack switches to its intense version
+    // Seconds into a run before the soundtrack is at its most intense. It builds up gradually until then:
+    // it swells to full volume over the first ~2 min, crossfades into the intense version around 2-3.5 min,
+    // then keeps pushing until 6 min.
+    const MUSIC_FULL_INTENSITY_AFTER = 360;
     const MUSIC_SLOW_DEPTH = 0.5; // the music slows by half as much as the balls (0.7x at full slow-mo)
     const ballTimeScale = () => slowTime <= 0 ? 1 : SLOW_FACTOR + (1 - SLOW_FACTOR) * (1 - Math.min(1, slowTime / 0.5));
 
@@ -1057,11 +1060,12 @@
 
     // Homing event: a slow seeker with a limited turn rate, so it can be outmanoeuvred
     const HOMING_DURATION = 7, HOMING_SPEED = 150, HOMING_TURN_RATE = 2.2;
+    const HUNT_MARK_TIME = 1.5; // seconds the crosshair shows on the player when a hunt starts
 
     // Speed-up event: balls heat up and go faster for a while
     const BOOST_LIGHT = rgb(255, 250, 190), BOOST_DARK = rgb(210, 130, 20);
     const BOOST_FACTOR = 1.75, BOOST_MIN_DURATION = 3, BOOST_MAX_DURATION = 5;
-    const BOOST_MIN_SPEED = 400; // boosted balls go at least this fast (times the difficulty speed), so slow balls still feel boosted
+    const BOOST_MIN_SPEED = 520; // boosted balls go at least this fast (times the difficulty speed), so slow balls still feel boosted
     const BOOST_MAX_SPEED = 650; // ...and at most this fast, so already-fast balls don't become undodgeable
 
     // Giant event timing: warning, then grow / hold / shrink
@@ -1592,6 +1596,19 @@
     }
 
     function drawPlayerEffects(player) {
+        // Hunted: a brief red crosshair locks onto the player when a ball starts homing in, then fades out
+        const huntAge = balls.reduce((t, b) => b.mode === Mode.Homing ? Math.min(t, HOMING_DURATION - b.modeTime) : t, Infinity);
+        if (huntAge < HUNT_MARK_TIME) {
+            const c = css(HOMING_LIGHT, Math.round(230 * Math.min(1, (HUNT_MARK_TIME - huntAge) / 0.4)));
+            const r = playerR + 10 + Math.sin(survived * 8) * 1.5;
+            strokeCircle(player.x, player.y, r, c, 2);
+            for (let i = 0; i < 4; i++) {
+                const a = survived * 1.5 + i * TAU / 4, cos = Math.cos(a), sin = Math.sin(a);
+                line(player.x + cos * (r - 5), player.y + sin * (r - 5),
+                     player.x + cos * (r + 7), player.y + sin * (r + 7), c, 2.5);
+            }
+        }
+
         // Autopilot: three dots orbiting the player; they flicker in the last second
         if (autoTime > 0 && (autoTime > 1 || Math.floor(autoTime * 12) % 2 === 0)) {
             const c = css(powerUpColor(PowerUpKind.Auto), 230);
@@ -2015,7 +2032,9 @@
         if (playing()) { drawPlayerEffects(player); drawIdleWarning(player); drawActiveEffects(); }
 
         const d = currentDifficulty();
-        const hud = tr('hud', { time: Math.floor(survived), balls: balls.length, difficulty: tr(d.name), best: Math.floor(best[difficultyIndex]) });
+        // While beating the record, the record counts up live along with the time
+        const shownBest = playing() ? Math.max(best[difficultyIndex], survived) : best[difficultyIndex];
+        const hud = tr('hud', { time: Math.floor(survived), balls: balls.length, difficulty: tr(d.name), best: Math.floor(shownBest) });
         drawText(hud, 12, 10, 14, true, 'white');
 
         drawBanners();
