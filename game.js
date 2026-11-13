@@ -1057,6 +1057,7 @@
 
     // Homing event: a slow seeker with a limited turn rate, so it can be outmanoeuvred
     const HOMING_DURATION = 7, HOMING_SPEED = 150, HOMING_TURN_RATE = 2.2;
+    const HUNT_MARK_TIME = 1.5; // seconds the crosshair shows on the player when a hunt starts
 
     // Speed-up event: balls heat up and go faster for a while
     const BOOST_LIGHT = rgb(255, 250, 190), BOOST_DARK = rgb(210, 130, 20);
@@ -1592,6 +1593,19 @@
     }
 
     function drawPlayerEffects(player) {
+        // Hunted: a brief red crosshair locks onto the player when a ball starts homing in, then fades out
+        const huntAge = balls.reduce((t, b) => b.mode === Mode.Homing ? Math.min(t, HOMING_DURATION - b.modeTime) : t, Infinity);
+        if (huntAge < HUNT_MARK_TIME) {
+            const c = css(HOMING_LIGHT, Math.round(230 * Math.min(1, (HUNT_MARK_TIME - huntAge) / 0.4)));
+            const r = playerR + 10 + Math.sin(survived * 8) * 1.5;
+            strokeCircle(player.x, player.y, r, c, 2);
+            for (let i = 0; i < 4; i++) {
+                const a = survived * 1.5 + i * TAU / 4, cos = Math.cos(a), sin = Math.sin(a);
+                line(player.x + cos * (r - 5), player.y + sin * (r - 5),
+                     player.x + cos * (r + 7), player.y + sin * (r + 7), c, 2.5);
+            }
+        }
+
         // Autopilot: three dots orbiting the player; they flicker in the last second
         if (autoTime > 0 && (autoTime > 1 || Math.floor(autoTime * 12) % 2 === 0)) {
             const c = css(powerUpColor(PowerUpKind.Auto), 230);
