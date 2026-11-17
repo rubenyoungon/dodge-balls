@@ -4,7 +4,7 @@ A browser game: steer the red ball with your mouse and keep it away from the blu
 
 ## Running it
 
-Open `index.html` in a browser.
+Open `public/index.html` in a browser.
 
 You can also serve the folder with any static file server, for example:
 
@@ -14,7 +14,7 @@ python -m http.server 8123
 
 Then go to <http://localhost:8123>.
 
-When deployed to Cloudflare Pages, `functions/_middleware.js` allows only the app files (`index.html`, `favicon.svg`, `i18n.js`, `audio.js` and `game.js`). Other paths, including repository files such as `.gitignore` and Markdown files, return 404.
+When deployed to Cloudflare Pages, `functions/_middleware.js` allows only the app files (`public/index.html`, `public/favicon.svg`, `public/i18n.js`, `public/audio.js` and `public/game.js`). Other paths, including repository files such as `.gitignore` and Markdown files, return 404.
 
 ## How to play
 
@@ -70,9 +70,9 @@ Power-ups appear now and then and disappear after 8 seconds. Touch one to grab i
 
 ## Files
 
-- `index.html`: the page and canvas.
-- `i18n.js`: English and Dutch text, and picking the language from the browser.
-- `game.js`: game loop, physics, events, power-ups and drawing.
-- `audio.js`: synthesized collision sounds, power-up and event sounds, the lose sound, and the music.
+- `public/index.html`: the page and canvas.
+- `public/i18n.js`: English and Dutch text, and picking the language from the browser.
+- `public/game.js`: game loop, physics, events, power-ups and drawing.
+- `public/audio.js`: synthesized collision sounds, power-up and event sounds, the lose sound, and the music.
 
 Settings (difficulty, music and effects volume, best times) are kept in the browser's `localStorage`.
