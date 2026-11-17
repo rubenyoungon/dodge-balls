@@ -14,6 +14,8 @@ python -m http.server 8123
 
 Then go to <http://localhost:8123>.
 
+When deployed to Cloudflare Pages, `functions/_middleware.js` allows only the app files (`index.html`, `favicon.svg`, `i18n.js`, `audio.js` and `game.js`). Other paths, including repository files such as `.gitignore` and Markdown files, return 404.
+
 ## How to play
 
 - Click (or press Space, Enter or R) to start. The mouse is captured while you play, and moving it moves the red ball.
